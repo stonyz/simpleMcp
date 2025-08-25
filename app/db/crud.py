@@ -5,7 +5,7 @@ import json
 import yaml
 from typing import List, Optional, Tuple
 
-def upsert_openapi_file(db: Session, orgid: str, appid: str, openapi_data: dict):
+def upsert_openapi_file(db: Session, orgid: str, appid: str, fileId: str, fileName: str, openapi_data: dict):
     info = openapi_data.get("info", {})
     title = info.get("title", "untitled")
     version = info.get("version") or ""
@@ -14,8 +14,7 @@ def upsert_openapi_file(db: Session, orgid: str, appid: str, openapi_data: dict)
     stmt = select(OpenAPIFile).where(
         OpenAPIFile.orgid == orgid,
         OpenAPIFile.appid == appid,
-        OpenAPIFile.title == title,
-        OpenAPIFile.version == version,
+        OpenAPIFile.fileId == fileId
     )
     existed = db.execute(stmt).scalars().first()
     if existed:
@@ -28,6 +27,8 @@ def upsert_openapi_file(db: Session, orgid: str, appid: str, openapi_data: dict)
     obj = OpenAPIFile(
         orgid=orgid,
         appid=appid,
+        fileId=fileId,
+        fileName=fileName,
         title=title,
         version=version,
         openapi_yaml = yaml.dump(openapi_data, allow_unicode=True),

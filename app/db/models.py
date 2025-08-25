@@ -7,6 +7,8 @@ class OpenAPIFile(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     orgid = Column(String(64), nullable=False, index=True)
     appid = Column(String(64), nullable=False, index=True)
+    fileId = Column(String(64), nullable=False, index=True)
+    fileName = Column(String(256), nullable=False, index=True)
     title = Column(String(256), nullable=False, index=True)
     version = Column(String(64), nullable=True)
     openapi_yaml = Column(Text, nullable=False)

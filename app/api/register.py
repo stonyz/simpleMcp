@@ -12,8 +12,10 @@ log = logging.getLogger(__name__)
 
 @router.post("/register")
 async def register_openapi(
-    orgid: str = Form(...),
-    appid: str = Form(...),
+    org: str = Form(...),
+    app: str = Form(...),
+    fileId: str = Form(...),
+    fileName: str = Form(...),
     file: Optional[UploadFile] = None,
     yaml_content: Optional[str] = Form(None)
 ):
@@ -31,14 +33,16 @@ async def register_openapi(
         raise HTTPException(status_code=400, detail="OpenAPI content missing 'paths'")
 
     with next(get_db()) as db:  # 直接使用依赖函数提供的生成器
-        obj, updated = crud.upsert_openapi_file(db, orgid, appid, openapi_data)
+        obj, updated = crud.upsert_openapi_file(db, org, app, fileId, fileName, openapi_data)
 
-    registered = register_from_openapi(orgid, appid, openapi_data)
+    registered = register_from_openapi(org, app, openapi_data)
     return {
         "status": "success",
         "updated": updated,
-        "orgid": orgid,
-        "appid": appid,
+        "orgid": org,
+        "appid": app,
+        "fileId": fileId,
+        "fileName": fileName,
         "title": openapi_data.get("info", {}).get("title"),
         "version": openapi_data.get("info", {}).get("version"),
         "registered_functions": registered
