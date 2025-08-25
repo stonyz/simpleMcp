@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import Optional
 import yaml, json
 from app.db import get_db
 from app.db import crud
@@ -13,19 +14,17 @@ log = logging.getLogger(__name__)
 async def register_openapi(
     orgid: str = Form(...),
     appid: str = Form(...),
-    file: UploadFile = Form(...)
+    file: Optional[UploadFile] = None,
+    yaml_content: Optional[str] = Form(None)
 ):
-    if not file:
-        raise HTTPException(status_code=400, detail="No file uploaded")
 
-    content = await file.read()
-    try:
-        if file.filename.endswith((".yaml", ".yml")):
-            openapi_data = yaml.safe_load(content)
-        else:
-            openapi_data = json.loads(content)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid OpenAPI file: {e}")
+    if file:
+        content_bytes = await file.read()
+        openapi_data = parse_file_content(file.filename, content_bytes)
+    elif yaml_content:
+        openapi_data = parse_yaml_string(yaml_content)
+    else:
+        raise HTTPException(status_code=400, detail="No file or YAML string provided")
 
     # 基本校验
     if not isinstance(openapi_data, dict) or "paths" not in openapi_data:
@@ -44,3 +43,25 @@ async def register_openapi(
         "version": openapi_data.get("info", {}).get("version"),
         "registered_functions": registered
     }
+
+def parse_file_content(filename: str, content: bytes):
+    """根据文件后缀解析内容"""
+    try:
+        if filename.endswith((".yaml", ".yml")):
+            return yaml.safe_load(content)
+        elif filename.endswith(".json"):
+            return json.loads(content)
+        else:
+            # 默认尝试 YAML，再尝试 JSON
+            try:
+                return yaml.safe_load(content)
+            except yaml.YAMLError:
+                return json.loads(content)
+    except (yaml.YAMLError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid file content: {e}")
+
+def parse_yaml_string(yaml_str: str):
+    try:
+        return yaml.safe_load(yaml_str)
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML string: {e}")
