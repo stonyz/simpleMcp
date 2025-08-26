@@ -1,0 +1,64 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+*.whl
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Poetry
+poetry.lock
+# 如果你希望锁文件上 Git 管理，也可以删除上面这一行
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Pyenv
+.python-version
+
+# VS Code
+.vscode/
+.history/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Database
+*.sqlite3
+*.db
+
+# Uvicorn / FastAPI
+*.pid
+__pypackages__/
