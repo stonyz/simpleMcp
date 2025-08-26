@@ -5,11 +5,14 @@ from app.midware.LoggingMiddleware import LoggingMiddleware
 from app.db import engine, Base, get_db
 from app.db import crud
 from app.db.models import OpenAPIFile
-from app.api import register as register_api
-from app.api import functions as functions_api
-from app.api import delete as delete_api
-from app.api import mcp_api
+from app.routers import register as register_api
+from app.routers import functions as functions_api
+from app.routers import delete as delete_api
+from app.routers import mcp_api
 from app.mcp.openapi_loader import register_from_openapi
+import os
+import pkgutil
+import importlib
 import yaml
 import logging
 
@@ -23,10 +26,30 @@ app.add_middleware(LoggingMiddleware)
 Base.metadata.create_all(bind=engine)
 
 # 路由
-app.include_router(register_api.router)
-app.include_router(functions_api.router)
-app.include_router(delete_api.router)
-app.include_router(mcp_api.router)
+# app.include_router(register_api.router)
+# app.include_router(functions_api.router)
+# app.include_router(delete_api.router)
+# app.include_router(mcp_api.router)
+
+def register_routers():
+    # 获取 routers 文件夹的绝对路径
+    base_path = os.path.dirname(os.path.abspath(__file__))  # 当前文件的绝对路径
+    routers_path = os.path.join(base_path, "routers")  # 拼接 routers 目录路径
+
+    # 确保路径存在
+    if not os.path.exists(routers_path):
+        raise FileNotFoundError(f"The routers directory does not exist: {routers_path}")
+
+    # 遍历 routers 文件夹中的模块
+    for _, module_name, _ in pkgutil.iter_modules([routers_path]):
+        # 导入模块
+        module = importlib.import_module(f"{__package__}.routers.{module_name}")  # 模块名加上路径前缀
+        if hasattr(module, "router"):  # 检查是否定义了 `router`
+            prefix = f"/{module_name}"
+            app.include_router(module.router, prefix=prefix)
+            log.info(f"Registered router from module: {module_name}")
+
+register_routers()
 
 @app.on_event("startup")
 def on_startup():
