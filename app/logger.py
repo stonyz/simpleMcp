@@ -259,3 +259,5 @@ def get_logger(name: str, log_file: str = None):
 
     loggers[name] = logger
     return logger
+
+request_logger = get_logger("request", "request.log")

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.config import settings
 from app.logger import setup_logging
+from app.midware.LoggingMiddleware import LoggingMiddleware
 from app.db import engine, Base, get_db
 from app.db import crud
 from app.db.models import OpenAPIFile
@@ -17,6 +18,7 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
 
+app.add_middleware(LoggingMiddleware)
 # 创建表（产品环境建议用 Alembic 做迁移）
 Base.metadata.create_all(bind=engine)
 
