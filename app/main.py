@@ -4,11 +4,7 @@ from app.logger import setup_logging
 from app.midware.LoggingMiddleware import LoggingMiddleware
 from app.db import engine, Base, get_db
 from app.db import crud
-from app.db.models import OpenAPIFile
-from app.routers import register as register_api
-from app.routers import functions as functions_api
-from app.routers import delete as delete_api
-from app.routers import mcp_api
+
 from app.mcp.openapi_loader import register_from_openapi
 import os
 import pkgutil
