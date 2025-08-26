@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # 服务
     APP_NAME: str = "Dynamic MCP Server"
     DEBUG: bool = False
+    log_level:str = "DEBUG"
+    log_file_size:int = 10 * 1024 * 1024
 
     # Pydantic v2 配置
     model_config = SettingsConfigDict(
