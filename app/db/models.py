@@ -1,19 +1,22 @@
-from sqlalchemy import Column, Integer, String, Text, UniqueConstraint, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, UniqueConstraint, Index, func
 from app.db import Base
 
 class OpenAPIFile(Base):
     __tablename__ = "openapi_files"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    orgid = Column(String(64), nullable=False, index=True)
-    appid = Column(String(64), nullable=False, index=True)
-    fileId = Column(String(64), nullable=False, index=True)
-    fileName = Column(String(256), nullable=False, index=True)
-    title = Column(String(256), nullable=False, index=True)
+    orgid = Column(String(64), nullable=False)
+    appid = Column(String(64), nullable=False)
+    fileId = Column(String(64), nullable=False)
+    fileName = Column(String(256), nullable=False)
+    title = Column(String(256), nullable=False)
     version = Column(String(64), nullable=True)
     openapi_yaml = Column(Text, nullable=False)
+    create_at = Column(DateTime, nullable=False, server_default=func.now())
+    update_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
 
     __table_args__ = (
-        UniqueConstraint("orgid", "appid", "title", "version", name="uq_org_app_title_ver"),
+        UniqueConstraint("orgid", "appid", "fileId", name="uq_org_app_fileId"),
         Index("idx_org_app", "orgid", "appid"),
     )
