@@ -31,23 +31,7 @@ loggers = {}  # 缓存已创建的 logger
 
 
 class DailySizeDatedFileHandler(logging.Handler):
-    """
-    当前文件名也带日期的 Handler。
-    - 跨天或超大小 -> 新文件
-    - 同一天内超大小 -> 生成 -1, -2 分片
-    - 可按天清理历史文件
-    说明：不适用于多进程并发写同一日志文件的场景（需要额外并发安全方案）。
-    """
-
-    def __init__(
-        self,
-        base_path: str,
-        max_bytes: int,
-        date_fmt: str = DATE_FMT,
-        backup_days: int = 0,
-        encoding: Optional[str] = "utf-8",
-        level: int = logging.INFO,
-    ):
+    def __init__(self, base_path: str, max_bytes: int, date_fmt: str = "%Y-%m-%d", backup_days: int = 0, encoding: str = "utf-8", level: int = logging.INFO):
         super().__init__(level=level)
         self.base_dir = os.path.dirname(base_path)
         self.base_name, self.base_ext = os.path.splitext(os.path.basename(base_path))
@@ -57,86 +41,33 @@ class DailySizeDatedFileHandler(logging.Handler):
         self.encoding = encoding
 
         self.current_date = self._today_str()
-        self.part_index = self._get_initial_part_index()
         self.stream = None
-        self._open()  # 打开当前日期的文件
+        self._open()
 
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            # 每次写入前判断是否需要切割
-            if self._should_rollover():
-                self._do_rollover()
-
-            msg = self.format(record)
-            # 确保 stream 存在
-            if self.stream is None:
-                self._open()
-            self.stream.write(msg + "\n")
-            self.stream.flush()
-        except Exception:
-            self.handleError(record)
-
-    # ---------- 私有方法 ----------
-
-    def _today_str(self) -> str:
+    def _today_str(self):
         return datetime.now().strftime(self.date_fmt)
 
-    def _build_filename(self, date_str: str, part: int) -> str:
-        # logs/app-2025-08-26.log 或 logs/app-2025-08-26-1.log
-        suffix = f"-{part}" if part > 0 else ""
-        filename = f"{self.base_name}-{date_str}{suffix}{self.base_ext}"
+    def _build_filename(self, date_str: str, part: int = None) -> str:
+        if part is None:
+            # 最新文件无后缀
+            filename = f"{self.base_name}-{date_str}{self.base_ext}"
+        else:
+            # 老文件带序号
+            filename = f"{self.base_name}-{date_str}-{part}{self.base_ext}"
         return os.path.join(self.base_dir, filename)
-
-    def _get_initial_part_index(self) -> int:
-        """
-        应对进程重启：扫描已存在的该日文件，找到最大的分片序号 + 1
-        """
-        date_str = self._today_str()
-        pattern = os.path.join(self.base_dir, f"{self.base_name}-{date_str}*{self.base_ext}")
-        existing = glob.glob(pattern)
-        if not existing:
-            return 0
-
-        # 匹配 ...-YYYY-MM-DD(-n)?.ext
-        rx = re.compile(rf"{re.escape(self.base_name)}-{re.escape(date_str)}(?:-(\d+))?{re.escape(self.base_ext)}$")
-        max_part = -1
-        for path in existing:
-            m = rx.search(os.path.basename(path))
-            if m:
-                if m.group(1) is None:
-                    max_part = max(max_part, 0)
-                else:
-                    max_part = max(max_part, int(m.group(1)))
-        return max_part + 1
 
     def _open(self):
         os.makedirs(self.base_dir, exist_ok=True)
-        filename = self._build_filename(self.current_date, self.part_index)
-        # 以追加方式打开
+        filename = self._build_filename(self.current_date)
         self.stream = open(filename, mode="a", encoding=self.encoding)
 
-    def _close(self):
-        if self.stream:
-            try:
-                self.stream.close()
-            finally:
-                self.stream = None
-
     def _should_rollover(self) -> bool:
-        # 跨天
         today = self._today_str()
         if today != self.current_date:
             return True
-
-        # 超大小
         if self.max_bytes > 0 and self.stream:
-            try:
-                self.stream.flush()
-                size = self.stream.tell()
-                if size >= self.max_bytes:
-                    return True
-            except Exception:
-                # 保险：获取大小失败也尝试切割，避免卡死
+            self.stream.flush()
+            if self.stream.tell() >= self.max_bytes:
                 return True
         return False
 
@@ -145,39 +76,54 @@ class DailySizeDatedFileHandler(logging.Handler):
 
         today = self._today_str()
         if today != self.current_date:
-            # 新的一天，分片从 0 开始
+            # 新的一天，从最新文件开始
             self.current_date = today
-            self.part_index = 0
             self._cleanup_old_files()
         else:
-            # 同一天内大小分片
-            self.part_index += 1
+            # 同一天 -> 把当前无后缀文件改名为 -1, -2 ...
+            self._rotate_existing_files(today)
 
         self._open()
 
-    def _cleanup_old_files(self):
-        """
-        清理过期文件：只按天保留（比如最近 7 天），不区分分片。
-        """
-        if self.backup_days and self.backup_days > 0:
-            cutoff_date = (datetime.now() - timedelta(days=self.backup_days)).strftime(self.date_fmt)
-            # 删除严格早于 cutoff_date 的文件
-            pattern = os.path.join(self.base_dir, f"{self.base_name}-*{self.base_ext}")
-            for path in glob.glob(pattern):
-                # 提取日期字符串
-                m = re.search(rf"{re.escape(self.base_name)}-(\d{{4}}-\d{{2}}-\d{{2}})", os.path.basename(path))
-                if not m:
-                    continue
-                file_date = m.group(1)
-                if file_date < cutoff_date:
-                    try:
-                        os.remove(path)
-                    except Exception:
-                        pass
+    def _rotate_existing_files(self, date_str: str):
+        # 找出已存在的 -n 文件
+        pattern = os.path.join(self.base_dir, f"{self.base_name}-{date_str}-*{self.base_ext}")
+        existing = glob.glob(pattern)
 
-    def close(self):
-        self._close()
-        super().close()
+        # 依次往后挪：-1 -> -2, -2 -> -3 ...
+        def extract_num(path):
+            m = re.search(rf"{self.base_name}-{date_str}-(\d+){self.base_ext}$", os.path.basename(path))
+            return int(m.group(1)) if m else None
+
+        for path in sorted(existing, key=extract_num, reverse=True):
+            num = extract_num(path)
+            if num is not None:
+                os.rename(path, self._build_filename(date_str, num + 1))
+
+        # 把当前无后缀文件改名为 -1
+        cur_file = self._build_filename(date_str)
+        if os.path.exists(cur_file):
+            os.rename(cur_file, self._build_filename(date_str, 1))
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            if self._should_rollover():
+                self._do_rollover()
+            msg = self.format(record)
+            if self.stream is None:
+                self._open()
+            self.stream.write(msg + "\n")
+            self.stream.flush()
+        except Exception:
+            self.handleError(record)
+
+    def _close(self):
+        if self.stream:
+            try:
+                self.stream.close()
+            finally:
+                self.stream = None
+
 
 # ========= Handler 工厂 =========
 
