@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
 from app.mcp.registry import registry
+from app.config import settings
 
 router = APIRouter()
 
@@ -34,3 +36,91 @@ async def mcp_call(
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("")
+async def mcp_jsonrpc(request: Request):
+    """
+    标准 MCP JSON-RPC 2.0 接口：支持 tools/list 与 tools/call（兼容 list_tools/call_tool），以及 initialize。
+    - initialize: 返回协议版本、服务端能力与 serverInfo
+    - tools/list 或 list_tools: params 可包含 orgid/appid/name 进行过滤
+    - tools/call 或 call_tool: params 包含 name/function_name 与 arguments/parameters
+    返回严格的 JSON-RPC 2.0 格式。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32700, "message": "Parse error"}
+        })
+
+    jsonrpc = body.get("jsonrpc")
+    method = body.get("method")
+    rpc_id = body.get("id")
+    params = body.get("params") or {}
+
+    if jsonrpc != "2.0" or method is None:
+        return JSONResponse(status_code=400, content={
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "error": {"code": -32600, "message": "Invalid Request"}
+        })
+
+    try:
+        if method == "initialize":
+            client_protocol = params.get("protocolVersion")
+            result = {
+                "protocolVersion": client_protocol or "2024-11-05",
+                "serverInfo": {
+                    "name": settings.APP_NAME,
+                    "version": getattr(settings, "APP_VERSION", "0.1.0")
+                },
+                "capabilities": {
+                    "tools": {}
+                }
+            }
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
+
+        if method in ("tools/list", "list_tools"):
+            orgid: Optional[str] = params.get("orgid")
+            appid: Optional[str] = params.get("appid")
+            name: Optional[str] = params.get("name")
+
+            schemas = registry.list_functions(orgid=orgid, appid=appid, name=name)
+            tools = [
+                {
+                    "name": s.get("name"),
+                    "description": s.get("description", ""),
+                    "inputSchema": s.get("parameters") or {"type": "object", "properties": {}}
+                }
+                for s in schemas
+            ]
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": tools}}
+
+        if method in ("tools/call", "call_tool"):
+            name = params.get("name") or params.get("function_name")
+            if not name:
+                return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": "Missing 'name' or 'function_name'"}}
+            arguments = params.get("arguments") or params.get("parameters") or {}
+            try:
+                result = registry.call_function(name, **arguments)
+            except Exception as e:
+                return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
+
+            # MCP 工具调用返回内容：使用 JSON 内容包装
+            return {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": {
+                    "content": [
+                        {"type": "json", "json": result}
+                    ]
+                }
+            }
+
+        return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32601, "message": "Method not found"}}
+
+    except Exception as e:
+        # 未预期的服务器错误
+        return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": str(e)}}
