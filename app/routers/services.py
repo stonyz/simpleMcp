@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, Query, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 import yaml, json
-from app.db import get_db
+from app.db import get_db, get_db_context
 from app.db import crud
 from app.mcp.openapi_loader import register_from_openapi
 import logging
@@ -34,7 +34,8 @@ async def register_openapi(
     if not isinstance(openapi_data, dict) or "paths" not in openapi_data:
         raise HTTPException(status_code=400, detail="OpenAPI content missing 'paths'")
 
-    with next(get_db()) as db:  # 直接使用依赖函数提供的生成器
+    # 使用现有的数据库操作方式
+    with get_db_context() as db:
         obj, updated = crud.upsert_openapi_file(db, org, app, fileId, fileName, openapi_data)
 
     registered = register_from_openapi(org, app, openapi_data)
@@ -74,7 +75,7 @@ def parse_yaml_string(yaml_str: str):
 
 
 @router.delete("/delete")
-def delete_openapi(
+async def delete_openapi(
     orgid: str = Query(..., alias="org"),
     appid: str = Query(..., alias="app"),
     fileId: str = Query(...)
@@ -84,12 +85,14 @@ def delete_openapi(
     1) 反注册所有由该 OpenAPI 生成的 functions
     2) 从数据库删除对应 OpenAPI 记录
     """
-    with next(get_db()) as db:
+    # 使用现有的数据库操作方式
+    with get_db_context() as db:
         obj = crud.get_one_openapi(db, orgid, appid, fileId)
         if not obj:
             raise HTTPException(status_code=404, detail="OpenAPI record not found")
 
-        openapi_data = json.loads(obj.openapi_yaml)
+        openapi_data= yaml.safe_load(obj.openapi_yaml)
+   
         # 收集所有 function 名称
         names = []
         for path, methods in (openapi_data.get("paths") or {}).items():

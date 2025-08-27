@@ -5,7 +5,7 @@ from app.mcp.registry import registry
 router = APIRouter()
 
 @router.get("/list")
-def mcp_list(
+async def mcp_list(
     orgid: Optional[str] = Query(None),
     appid: Optional[str] = Query(None),
     name: Optional[str] = Query(None),
@@ -17,7 +17,7 @@ def mcp_list(
     return registry.list_functions(orgid=orgid, appid=appid, name=name)
 
 @router.post("/call")
-def mcp_call(
+async def mcp_call(
     function_name: str = Body(..., embed=True),
     parameters: Dict[str, Any] = Body(default_factory=dict, embed=True)
 ):

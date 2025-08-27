@@ -5,7 +5,7 @@ from app.mcp.registry import registry
 router = APIRouter()
 
 @router.get("/")
-def list_functions(
+async def list_functions(
     orgid: str = Query(...),
     appid: str = Query(...),
     name: Optional[str] = Query(None)

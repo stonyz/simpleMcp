@@ -47,7 +47,7 @@ def get_openapi_files(db: Session, orgid: Optional[str] = None, appid: Optional[
         stmt = stmt.where(OpenAPIFile.appid == appid)
     return list(db.execute(stmt).scalars().all())
 
-def get_one_openapi(db: Session, orgid: str, appid: str, fileId: str, version: Optional[str]) -> Optional[OpenAPIFile]:
+def get_one_openapi(db: Session, orgid: str, appid: str, fileId: str, version: Optional[str] = None) -> Optional[OpenAPIFile]:
     stmt = select(OpenAPIFile).where(
         OpenAPIFile.orgid == orgid,
         OpenAPIFile.appid == appid,
@@ -57,7 +57,7 @@ def get_one_openapi(db: Session, orgid: str, appid: str, fileId: str, version: O
         stmt = stmt.where(OpenAPIFile.version == version)
     return db.execute(stmt).scalars().first()
 
-def delete_openapi_file(db: Session, orgid: str, appid: str, fileId: str, version: Optional[str]) -> int:
+def delete_openapi_file(db: Session, orgid: str, appid: str, fileId: str, version: Optional[str] = None) -> int:
     stmt = delete(OpenAPIFile).where(
         OpenAPIFile.orgid == orgid,
         OpenAPIFile.appid == appid,
