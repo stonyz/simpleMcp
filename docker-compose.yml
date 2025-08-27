@@ -1,0 +1,14 @@
+version: "3.7"
+
+services:
+  mcp-server:
+    image: mcp-server:latest
+    container_name: mcp-server
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs   # 映射宿主机 logs 目录
+    restart: unless-stopped
+
