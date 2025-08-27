@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from app.db.models import OpenAPIFile
 import json
 import yaml
@@ -31,6 +31,7 @@ def upsert_openapi_file(db: Session, orgid: str, appid: str, fileId: str, fileNa
         fileName=fileName,
         title=title,
         version=version,
+        create_at= func.now(),
         openapi_yaml = yaml.dump(openapi_data, allow_unicode=True),
     )
     db.add(obj)
