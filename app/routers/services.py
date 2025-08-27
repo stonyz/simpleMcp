@@ -73,7 +73,7 @@ def parse_yaml_string(yaml_str: str):
         raise HTTPException(status_code=400, detail=f"Invalid YAML string: {e}")
 
 
-@router.delete("/service/delete")
+@router.delete("/delete")
 def delete_openapi(
     orgid: str = Query(..., alias="org"),
     appid: str = Query(..., alias="app"),
