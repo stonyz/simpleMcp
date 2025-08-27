@@ -18,17 +18,20 @@
     WORKDIR /app
     
     # 环境变量（避免 pyc、强制 utf-8）
-    ENV PYTHONDONTWRITEBYTECODE=1
-    ENV PYTHONUNBUFFERED=1
-    
+    ENV PYTHONDONTWRITEBYTECODE=1 \
+        PYTHONUNBUFFERED=1 \
+        POETRY_VIRTUALENVS_CREATE=false \
+        POETRY_NO_INTERACTION=1 \
+        POETRY_NO_ANSI=1
     # 安装 Poetry
-    RUN pip install --no-cache-dir poetry
+    RUN pip install --no-cache-dir --progress-bar off  poetry
+
     
     # 复制 Poetry 文件
     COPY pyproject.toml poetry.lock* ./
-    
+
     # 安装依赖（只安装 main，不要 dev）
-    RUN poetry install --no-dev --no-root
+    RUN poetry install --no-interaction --no-root
     
     # 复制后端代码
     COPY app/ ./app/
@@ -37,7 +40,7 @@
     RUN mkdir -p logs
     
     # 如果前端构建成功，把静态文件复制到 app/static
-    COPY --from=frontend-builder /web/build ./app/static
+    #COPY --from=frontend-builder /web/build ./app/static
     
     # 暴露端口
     EXPOSE 8000
