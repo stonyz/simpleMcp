@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
 from app.mcp.registry import registry
 from app.config import settings
+import json
 
 router = APIRouter()
 
@@ -108,13 +109,21 @@ async def mcp_jsonrpc(request: Request):
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 
-            # MCP 工具调用返回内容：使用 JSON 内容包装
+            # 以 text 类型返回。如果结果非字符串，序列化为 JSON 文本
+            if isinstance(result, str):
+                text_payload = result
+            else:
+                try:
+                    text_payload = json.dumps(result, ensure_ascii=False)
+                except Exception:
+                    text_payload = str(result)
+
             return {
                 "jsonrpc": "2.0",
                 "id": rpc_id,
                 "result": {
                     "content": [
-                        {"type": "json", "json": result}
+                        {"type": "text", "text": text_payload}
                     ]
                 }
             }
