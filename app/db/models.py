@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, UniqueConstraint, Index, func, text
+from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, UniqueConstraint, Index, func, text
 from app.db import Base
 
 class OpenAPIFile(Base):
@@ -12,8 +12,8 @@ class OpenAPIFile(Base):
     title = Column(String(256), nullable=False)
     version = Column(String(64), nullable=True)
     openapi_yaml = Column(Text, nullable=False)
-    create_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
-    update_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
+    create_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    update_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
 
 
     __table_args__ = (
