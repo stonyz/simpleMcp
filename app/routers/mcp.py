@@ -89,14 +89,18 @@ async def mcp_jsonrpc(request: Request):
             name: Optional[str] = params.get("name")
 
             schemas = registry.list_functions(orgid=orgid, appid=appid, name=name)
-            tools = [
-                {
+            tools = []
+            for s in schemas:
+                tool = {
                     "name": s.get("name"),
                     "description": s.get("description", ""),
                     "inputSchema": s.get("parameters") or {"type": "object", "properties": {}}
                 }
-                for s in schemas
-            ]
+                # 添加 outputSchema 如果存在
+                if s.get("output_schema"):
+                    tool["outputSchema"] = s["output_schema"]
+                tools.append(tool)
+            
             return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": tools}}
 
         if method in ("tools/call", "call_tool"):
