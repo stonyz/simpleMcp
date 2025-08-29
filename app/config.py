@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     log_level:str = "DEBUG"
     log_file_size:int = 10 * 1024 * 1024
+    enable_console: bool = Field(True, description="Enable console logging")
 
     # Pydantic v2 配置
     model_config = SettingsConfigDict(
