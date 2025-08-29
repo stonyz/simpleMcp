@@ -4,6 +4,7 @@ from app.logger import setup_logging
 from app.midware.LoggingMiddleware import LoggingMiddleware
 from app.db import engine, Base, get_db, get_db_context
 from app.db import crud
+from app.common.exception_handlers import register_exception_handlers
 
 from app.mcp.openapi_loader import register_from_openapi
 import os
@@ -18,6 +19,9 @@ log = logging.getLogger(__name__)
 app = FastAPI(title=settings.APP_NAME)
 
 app.add_middleware(LoggingMiddleware)
+
+# 注册全局异常处理器
+register_exception_handlers(app)
 
 # 路由
 # app.include_router(register_api.router)
