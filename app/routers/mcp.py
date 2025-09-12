@@ -22,18 +22,22 @@ async def mcp_list(
 @router.post("/call")
 async def mcp_call(
     function_name: str = Body(..., embed=True),
-    parameters: Dict[str, Any] = Body(default_factory=dict, embed=True)
+    parameters: Dict[str, Any] = Body(default_factory=dict, embed=True),
+    orgid: Optional[str] = Body(None, embed=True),
+    appid: Optional[str] = Body(None, embed=True)
 ):
     """
     MCP 风格的 call：执行实际的 REST 请求。
     Body 示例：
     {
       "function_name": "get_user",
-      "parameters": {"user_id": "123"}
+      "parameters": {"user_id": "123"},
+      "orgid": "org1",
+      "appid": "app1"
     }
     """
     try:
-        result = registry.call_function(function_name, **parameters)
+        result = registry.call_function(function_name, orgid=orgid, appid=appid, **parameters)
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -45,6 +49,7 @@ async def mcp_jsonrpc(request: Request):
     - initialize: 返回协议版本、服务端能力与 serverInfo
     - tools/list 或 list_tools: params 可包含 orgid/appid/name 进行过滤
     - tools/call 或 call_tool: params 包含 name/function_name 与 arguments/parameters
+    - 支持通过 HTTP Headers 传递 orgid/appid: X-Org-ID, X-App-ID
     返回严格的 JSON-RPC 2.0 格式。
     """
     try:
@@ -60,6 +65,10 @@ async def mcp_jsonrpc(request: Request):
     method = body.get("method")
     rpc_id = body.get("id")
     params = body.get("params") or {}
+    
+    # 从 HTTP Headers 或 params 获取 orgid/appid
+    header_orgid = request.headers.get("X-Org-ID")
+    header_appid = request.headers.get("X-App-ID")
 
     if jsonrpc != "2.0" or method is None:
         return JSONResponse(status_code=400, content={
@@ -84,8 +93,9 @@ async def mcp_jsonrpc(request: Request):
             return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
 
         if method in ("tools/list", "list_tools"):
-            orgid: Optional[str] = params.get("orgid")
-            appid: Optional[str] = params.get("appid")
+            # 优先使用 params 中的值，其次使用 headers
+            orgid = params.get("orgid") or header_orgid
+            appid = params.get("appid") or header_appid
             name: Optional[str] = params.get("name")
 
             schemas = registry.list_functions(orgid=orgid, appid=appid, name=name)
@@ -108,8 +118,13 @@ async def mcp_jsonrpc(request: Request):
             if not name:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": "Missing 'name' or 'function_name'"}}
             arguments = params.get("arguments") or params.get("parameters") or {}
+            
+            # 优先使用 params 中的值，其次使用 headers
+            call_orgid = params.get("orgid") or header_orgid
+            call_appid = params.get("appid") or header_appid
+            
             try:
-                result = registry.call_function(name, **arguments)
+                result = registry.call_function(name, orgid=call_orgid, appid=call_appid, **arguments)
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 

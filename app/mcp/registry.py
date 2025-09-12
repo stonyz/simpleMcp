@@ -39,11 +39,18 @@ class MCPRegistry:
                 out.append(d["schema"])
             return out
 
-    def call_function(self, name: str, **kwargs):
+    def call_function(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs):
         with self._lock:
             item = self._registry.get(name)
         if not item:
             raise ValueError(f"Function '{name}' not found")
+        
+        # 进行 orgid/appid 权限检查（只有当提供了这些参数时才检查）
+        if orgid and item["orgid"] != orgid:
+            raise ValueError(f"Function '{name}' not accessible for orgid '{orgid}'. Function belongs to orgid '{item['orgid']}'")
+        if appid and item["appid"] != appid:
+            raise ValueError(f"Function '{name}' not accessible for appid '{appid}'. Function belongs to appid '{item['appid']}'")
+            
         return item["func"](**kwargs)
 
 # 全局单例
