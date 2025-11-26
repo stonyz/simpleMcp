@@ -30,7 +30,7 @@ def register_exception_handlers(app):
                     "type": "InternalServerError",
                     "message": "An unexpected error occurred",
                     "details": str(exc),
-                    "path": str(request.url),
+                    "path": request.url.path,
                     "method": request.method
                 }
             }
@@ -48,7 +48,7 @@ def register_exception_handlers(app):
                     "type": "HTTPException",
                     "message": exc.detail,
                     "status_code": exc.status_code,
-                    "path": str(request.url),
+                    "path": request.url.path,
                     "method": request.method
                 }
             }
@@ -66,7 +66,7 @@ def register_exception_handlers(app):
                     "type": "ValidationError",
                     "message": "Request validation failed",
                     "details": exc.errors(),
-                    "path": str(request.url),
+                    "path": request.url.path,
                     "method": request.method
                 }
             }
