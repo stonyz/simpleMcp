@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -12,12 +12,15 @@ class Settings(BaseSettings):
 
     # 默认全局 API Token（可被 org/app 定义的覆盖机制替代）
     API_TOKEN: Optional[str] = Field(None, description="Default Bearer token for upstream APIs")
+    
+    # 授权Tokens列表
+    AUTH_TOKENS: List[str] = Field(default_factory=list, description="List of valid authorization tokens")
 
     # 服务
     APP_NAME: str = "Dynamic MCP Server"
     DEBUG: bool = False
-    log_level:str = "DEBUG"
-    log_file_size:int = 10 * 1024 * 1024
+    log_level: str = "DEBUG"
+    log_file_size: int = 10 * 1024 * 1024
     enable_console: bool = Field(True, description="Enable console logging")
 
     # Pydantic v2 配置

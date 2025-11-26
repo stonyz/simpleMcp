@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.logger import setup_logging
 from app.midware.LoggingMiddleware import LoggingMiddleware
+from app.midware.AuthMiddleware import AuthMiddleware
 from app.db import engine, Base, get_db, get_db_context
 from app.db import crud
 from app.common.exception_handlers import register_exception_handlers
@@ -18,6 +19,8 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME)
 
+# Add middleware
+app.add_middleware(AuthMiddleware)
 app.add_middleware(LoggingMiddleware)
 
 # 注册全局异常处理器
