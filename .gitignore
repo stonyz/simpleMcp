@@ -62,3 +62,4 @@ venv.bak/
 # Uvicorn / FastAPI
 *.pid
 __pypackages__/
+sample_yamls
