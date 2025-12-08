@@ -1,0 +1,1 @@
+# REST functionality package for MCP server

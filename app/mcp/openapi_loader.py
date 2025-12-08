@@ -1,12 +1,14 @@
 import os
 import json
 import logging
-import requests
 import copy
 from typing import Dict, Any, List, Tuple, Optional
+from urllib.parse import urljoin
 
 from app.mcp.registry import registry
 from app.config import settings
+from app.mcp.rest.auth_handler import AuthHandler
+from app.mcp.rest.executor import execute_rest_call
 
 log = logging.getLogger(__name__)
 
@@ -291,18 +293,9 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
         # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
         if "auth" in kwargs:
             auth_info = kwargs["auth"]
-            if isinstance(auth_info, dict) and "username" in auth_info and "password" in auth_info:
-                # Extract username and password
-                username = auth_info["username"]
-                password = auth_info["password"]
-                
-                # Create basic auth header
-                import base64
-                credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-                final_headers["Authorization"] = f"Basic {credentials}"
-                
-                # Remove auth from kwargs so it's not passed as a parameter
-                del kwargs["auth"]
+            final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
+            # Remove auth from kwargs so it's not passed as a parameter
+            del kwargs["auth"]
         
         # path 替换
         url = url_template
@@ -328,13 +321,8 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
                 if "body" in kwargs:
                     body = kwargs["body"]
 
-        resp = requests.request(method.upper(), url, headers=final_headers, params=query, json=body, timeout=30)
-        resp.raise_for_status()
-        # 自动判定 json / text
-        ctype = resp.headers.get("Content-Type", "")
-        if "application/json" in ctype:
-            return resp.json()
-        return resp.text
+        # Execute the REST call
+        return execute_rest_call(method, url, final_headers, query, body)
     return func
 
 def register_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any]) -> List[str]:
