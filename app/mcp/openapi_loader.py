@@ -119,7 +119,7 @@ def _collect_parameters(op: Dict[str, Any], openapi_data: Dict[str, Any]) -> Tup
     rb = op.get("requestBody", {}) or {}
     body_schema = rb.get("content", {}).get("application/json", {}).get("schema", {}) or {}
     
-    # 解析参数的 $ref
+    # 解析参数的 $ref，并且对参数的 schema 也进行完整解析
     resolved_parameters = []
     for param in parameters:
         if "$ref" in param:
@@ -134,6 +134,11 @@ def _collect_parameters(op: Dict[str, Any], openapi_data: Dict[str, Any]) -> Tup
                 resolved_parameters.append(param)
         else:
             resolved_parameters.append(param)
+    
+    # 对每个参数的 schema 进行完整解析，确保所有嵌套的 $ref 都被解析
+    for param in resolved_parameters:
+        if "schema" in param:
+            param["schema"] = _resolve_schema(param["schema"], openapi_data)
     
     # 解析 body schema 的 $ref
     resolved_body_schema = _resolve_schema(body_schema, openapi_data)
@@ -188,24 +193,11 @@ def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: 
         if not name:
             continue
         
-        # 构建参数 schema，保留关键属性
-        param_schema = {}
-        for k, v in schema.items():
-            if k in ("type", "enum", "format", "items", "minItems", "maxItems", "minLength", "maxLength", "pattern"):
-                param_schema[k] = v
-        
-        # 处理数组类型的 items
-        if "items" in param_schema and isinstance(param_schema["items"], dict):
-            items_schema = {}
-            for k, v in param_schema["items"].items():
-                if k in ("type", "enum", "format", "pattern"):
-                    items_schema[k] = v
-            if items_schema:
-                param_schema["items"] = items_schema
-        
+        # 直接使用完整的 schema，类似于 response 处理方式
+        param_schema = copy.deepcopy(schema)
         props[name] = param_schema
         
-        if p.get("description"):
+        if p.get("description") and "description" not in props[name]:
             props[name]["description"] = p["description"]
         if p.get("required"):
             req.append(name)
@@ -218,45 +210,13 @@ def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: 
             breq = body_schema.get("required", []) or []
             for k, v in bprops.items():
                 if k not in props:
-                    # 构建属性 schema，保留关键属性
-                    prop_schema = {}
-                    for prop_k, prop_v in v.items():
-                        if prop_k in ("type", "enum", "format", "items", "minItems", "maxItems", "minLength", "maxLength", "pattern"):
-                            prop_schema[prop_k] = prop_v
-                    
-                    # 处理数组类型的 items
-                    if "items" in prop_schema and isinstance(prop_schema["items"], dict):
-                        items_schema = {}
-                        for items_k, items_v in prop_schema["items"].items():
-                            if items_k in ("type", "enum", "format", "pattern"):
-                                items_schema[items_k] = v
-                        if items_schema:
-                            prop_schema["items"] = items_schema
-                    
-                    props[k] = prop_schema
-                    
-                    if v.get("description"):
-                        props[k]["description"] = v["description"]
+                    props[k] = copy.deepcopy(v)
             for k in breq:
                 if k not in req:
                     req.append(k)
         else:
             # 如果 body 是非 object（如 array/string），统一封装成一个 body 字段
-            body_prop = {}
-            for k, v in body_schema.items():
-                if k in ("type", "enum", "format", "items", "minItems", "maxItems", "minLength", "maxLength", "pattern"):
-                    body_prop[k] = v
-            
-            # 处理数组类型的 items
-            if "items" in body_prop and isinstance(body_prop["items"], dict):
-                items_schema = {}
-                for items_k, items_v in body_prop["items"].items():
-                    if items_k in ("type", "enum", "format", "pattern"):
-                        items_schema[items_k] = items_v
-                if items_schema:
-                    body_prop["items"] = items_schema
-            
-            props["body"] = body_prop
+            props["body"] = copy.deepcopy(body_schema)
             req.append("body")
 
     return {"type": "object", "properties": props, "required": req}
@@ -284,6 +244,7 @@ def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str,
 def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]):
     """
     生成实际的可调用函数：将 kwargs 映射到 path / query / body
+    添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
     """
     def func(**kwargs):
         # Create a copy of headers to avoid modifying the original
@@ -296,6 +257,9 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
             final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
             # Remove auth from kwargs so it's not passed as a parameter
             del kwargs["auth"]
+        
+        # Validate parameters according to OpenAPI specification
+        _validate_parameters(kwargs, parameters, body_schema)
         
         # path 替换
         url = url_template
@@ -324,6 +288,119 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
         # Execute the REST call
         return execute_rest_call(method, url, final_headers, query, body)
     return func
+
+def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]):
+    """
+    验证参数是否符合 OpenAPI 规范
+    检查必需参数是否存在以及参数值是否符合 schema 定义
+    """
+    # Validate path and query parameters
+    for param in parameters:
+        name = param.get("name")
+        where = param.get("in")
+        required = param.get("required", False)
+        schema = param.get("schema", {})
+        
+        # Check if required parameters are provided
+        if required and name not in kwargs:
+            raise ValueError(f"Missing required parameter: {name}")
+        
+        # Validate parameter value against schema if provided
+        if name in kwargs and schema:
+            _validate_value_against_schema(kwargs[name], schema, name)
+    
+    # Validate body parameters
+    if body_schema:
+        _validate_value_against_schema(kwargs, body_schema, "request body")
+
+def _validate_value_against_schema(value: Any, schema: Dict[str, Any], param_name: str):
+    """
+    根据 OpenAPI schema 验证单个参数值
+    支持递归验证嵌套对象和数组
+    """
+    if not schema:
+        return
+        
+    # Get schema properties
+    schema_type = schema.get("type")
+    enum_values = schema.get("enum")
+    pattern = schema.get("pattern")
+    minimum = schema.get("minimum")
+    maximum = schema.get("maximum")
+    
+    # Handle nullable values
+    if value is None:
+        if schema.get("nullable", False):
+            return
+        # If not nullable, continue with validation which should fail for None values
+    
+    # Type validation
+    if schema_type == "string":
+        if not isinstance(value, str):
+            raise ValueError(f"Parameter {param_name} must be a string")
+        
+        # Pattern validation
+        if pattern:
+            import re
+            if not re.match(pattern, value):
+                raise ValueError(f"Parameter {param_name} does not match pattern: {pattern}")
+                
+    elif schema_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):  # bool is subclass of int in Python
+            raise ValueError(f"Parameter {param_name} must be an integer")
+            
+        # Range validation
+        if minimum is not None and value < minimum:
+            raise ValueError(f"Parameter {param_name} must be >= {minimum}")
+        if maximum is not None and value > maximum:
+            raise ValueError(f"Parameter {param_name} must be <= {maximum}")
+            
+    elif schema_type == "number":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ValueError(f"Parameter {param_name} must be a number")
+            
+        # Range validation
+        if minimum is not None and value < minimum:
+            raise ValueError(f"Parameter {param_name} must be >= {minimum}")
+        if maximum is not None and value > maximum:
+            raise ValueError(f"Parameter {param_name} must be <= {maximum}")
+            
+    elif schema_type == "boolean":
+        if not isinstance(value, bool):
+            raise ValueError(f"Parameter {param_name} must be a boolean")
+            
+    elif schema_type == "array":
+        if not isinstance(value, list):
+            raise ValueError(f"Parameter {param_name} must be an array")
+            
+        # Validate array items if items schema is provided
+        items_schema = schema.get("items", {})
+        if items_schema:
+            for i, item in enumerate(value):
+                _validate_value_against_schema(item, items_schema, f"{param_name}[{i}]")
+                
+    elif schema_type == "object":
+        if not isinstance(value, dict):
+            raise ValueError(f"Parameter {param_name} must be an object")
+            
+        # Validate object properties
+        properties = schema.get("properties", {})
+        required_fields = schema.get("required", [])
+        
+        # Check required fields
+        for field in required_fields:
+            if field not in value:
+                raise ValueError(f"Missing required field in {param_name}: {field}")
+        
+        # Validate each property against its schema
+        for prop_name, prop_value in value.items():
+            if prop_name in properties:
+                prop_schema = properties[prop_name]
+                _validate_value_against_schema(prop_value, prop_schema, f"{param_name}.{prop_name}")
+    
+    # Enum validation (applies to all types)
+    if enum_values and value not in enum_values:
+        raise ValueError(f"Parameter {param_name} must be one of {enum_values}")
 
 def register_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any]) -> List[str]:
     """
