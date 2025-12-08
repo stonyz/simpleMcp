@@ -284,15 +284,35 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
     生成实际的可调用函数：将 kwargs 映射到 path / query / body
     """
     def func(**kwargs):
+        # Create a copy of headers to avoid modifying the original
+        final_headers = headers.copy()
+        
+        # Check if auth information is provided in arguments
+        # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
+        if "auth" in kwargs:
+            auth_info = kwargs["auth"]
+            if isinstance(auth_info, dict) and "username" in auth_info and "password" in auth_info:
+                # Extract username and password
+                username = auth_info["username"]
+                password = auth_info["password"]
+                
+                # Create basic auth header
+                import base64
+                credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+                final_headers["Authorization"] = f"Basic {credentials}"
+                
+                # Remove auth from kwargs so it's not passed as a parameter
+                del kwargs["auth"]
+        
         # path 替换
         url = url_template
         query: Dict[str, Any] = {}
         for p in parameters:
             name = p.get("name")
             where = p.get("in")
-            if where == "path":
+            if name and where == "path":
                 url = url.replace(f"{{{name}}}", str(kwargs.get(name, "")))
-            elif where == "query":
+            elif name and where == "query":
                 if name in kwargs:
                     query[name] = kwargs[name]
             # header/cookie 可按需扩展到 requests 参数，这里先由 _build_headers 统一处理公共 header
@@ -308,7 +328,7 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
                 if "body" in kwargs:
                     body = kwargs["body"]
 
-        resp = requests.request(method.upper(), url, headers=headers, params=query, json=body, timeout=30)
+        resp = requests.request(method.upper(), url, headers=final_headers, params=query, json=body, timeout=30)
         resp.raise_for_status()
         # 自动判定 json / text
         ctype = resp.headers.get("Content-Type", "")
