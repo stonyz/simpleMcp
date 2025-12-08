@@ -1,16 +1,14 @@
-import os
-import json
 import logging
 import copy
+import os
 from typing import Dict, Any, List, Tuple, Optional
 from urllib.parse import urljoin
 
 from app.mcp.registry import registry
 from app.config import settings
-from app.mcp.rest.auth_handler import AuthHandler
-from app.mcp.rest.executor import execute_rest_call
 
 log = logging.getLogger(__name__)
+
 
 def _resolve_ref(ref: str, openapi_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
@@ -35,6 +33,7 @@ def _resolve_ref(ref: str, openapi_data: Dict[str, Any]) -> Optional[Dict[str, A
     except Exception as e:
         log.warning(f"Failed to resolve ref {ref}: {e}")
         return None
+
 
 def _resolve_schema(schema: Dict[str, Any], openapi_data: Dict[str, Any], visited_refs: Optional[set] = None) -> Dict[str, Any]:
     """
@@ -107,9 +106,11 @@ def _resolve_schema(schema: Dict[str, Any], openapi_data: Dict[str, Any], visite
     
     return resolved_schema
 
+
 def _make_function_name(method: str, path: str) -> str:
     clean_path = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
     return f"{method.lower()}_{clean_path or 'root'}"
+
 
 def _collect_parameters(op: Dict[str, Any], openapi_data: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
@@ -145,6 +146,7 @@ def _collect_parameters(op: Dict[str, Any], openapi_data: Dict[str, Any]) -> Tup
     
     return resolved_parameters, resolved_body_schema
 
+
 def _extract_response_schema(op: Dict[str, Any], openapi_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     从 OpenAPI operation 提取响应 schema，解析所有 $ref
@@ -176,6 +178,7 @@ def _extract_response_schema(op: Dict[str, Any], openapi_data: Dict[str, Any]) -
                     return _resolve_schema(schema, openapi_data)
     
     return None
+
 
 def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -221,10 +224,12 @@ def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: 
 
     return {"type": "object", "properties": props, "required": req}
 
+
 def _choose_server(openapi: Dict[str, Any]) -> str:
     servers = openapi.get("servers") or [{"url": ""}]
     base_url = servers[0].get("url", "")
     return base_url.rstrip("/")
+
 
 def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str, str]:
     """
@@ -241,201 +246,66 @@ def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str,
     # 你也可以在此扩展 apiKey in header/query 等
     return headers
 
-def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]):
-    """
-    生成实际的可调用函数：将 kwargs 映射到 path / query / body
-    添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
-    """
-    def func(**kwargs):
-        # Create a copy of headers to avoid modifying the original
-        final_headers = headers.copy()
-        
-        # Check if auth information is provided in arguments
-        # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
-        if "auth" in kwargs:
-            auth_info = kwargs["auth"]
-            final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
-            # Remove auth from kwargs so it's not passed as a parameter
-            del kwargs["auth"]
-        
-        # Validate parameters according to OpenAPI specification
-        _validate_parameters(kwargs, parameters, body_schema)
-        
-        # path 替换
-        url = url_template
-        query: Dict[str, Any] = {}
-        for p in parameters:
-            name = p.get("name")
-            where = p.get("in")
-            if name and where == "path":
-                url = url.replace(f"{{{name}}}", str(kwargs.get(name, "")))
-            elif name and where == "query":
-                if name in kwargs:
-                    query[name] = kwargs[name]
-            # header/cookie 可按需扩展到 requests 参数，这里先由 _build_headers 统一处理公共 header
 
-        # body
-        body = None
-        if body_schema:
-            if body_schema.get("type") == "object":
-                keys = body_schema.get("properties", {}).keys()
-                body = {k: kwargs[k] for k in keys if k in kwargs}
-            else:
-                # 非 object 的 body，用专用字段接收
-                if "body" in kwargs:
-                    body = kwargs["body"]
-
-        # Execute the REST call
-        return execute_rest_call(method, url, final_headers, query, body)
-    return func
-
-def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]):
+class ToolRegistry:
     """
-    验证参数是否符合 OpenAPI 规范
-    检查必需参数是否存在以及参数值是否符合 schema 定义
+    ToolRegistry handles the registration and loading of tools from various sources.
+    This separates the registration/loading logic from the execution logic.
     """
-    # Validate path and query parameters
-    for param in parameters:
-        name = param.get("name")
-        where = param.get("in")
-        required = param.get("required", False)
-        schema = param.get("schema", {})
-        
-        # Check if required parameters are provided
-        if required and name not in kwargs:
-            raise ValueError(f"Missing required parameter: {name}")
-        
-        # Validate parameter value against schema if provided
-        if name in kwargs and schema:
-            _validate_value_against_schema(kwargs[name], schema, name)
     
-    # Validate body parameters
-    if body_schema:
-        _validate_value_against_schema(kwargs, body_schema, "request body")
+    @staticmethod
+    def register_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any]) -> List[str]:
+        """
+        从 OpenAPI 文档批量注册 tools。返回已注册的 tool 名称列表。
+        """
+        base_url = _choose_server(openapi_data)
+        paths = openapi_data.get("paths") or {}
+        headers = _build_headers(openapi_data, orgid, appid)
 
-def _validate_value_against_schema(value: Any, schema: Dict[str, Any], param_name: str):
-    """
-    根据 OpenAPI schema 验证单个参数值
-    支持递归验证嵌套对象和数组
-    """
-    if not schema:
-        return
-        
-    # Get schema properties
-    schema_type = schema.get("type")
-    enum_values = schema.get("enum")
-    pattern = schema.get("pattern")
-    minimum = schema.get("minimum")
-    maximum = schema.get("maximum")
-    
-    # Handle nullable values
-    if value is None:
-        if schema.get("nullable", False):
-            return
-        # If not nullable, continue with validation which should fail for None values
-    
-    # Type validation
-    if schema_type == "string":
-        if not isinstance(value, str):
-            raise ValueError(f"Parameter {param_name} must be a string")
-        
-        # Pattern validation
-        if pattern:
-            import re
-            if not re.match(pattern, value):
-                raise ValueError(f"Parameter {param_name} does not match pattern: {pattern}")
-                
-    elif schema_type == "integer":
-        if not isinstance(value, int) or isinstance(value, bool):  # bool is subclass of int in Python
-            raise ValueError(f"Parameter {param_name} must be an integer")
-            
-        # Range validation
-        if minimum is not None and value < minimum:
-            raise ValueError(f"Parameter {param_name} must be >= {minimum}")
-        if maximum is not None and value > maximum:
-            raise ValueError(f"Parameter {param_name} must be <= {maximum}")
-            
-    elif schema_type == "number":
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            raise ValueError(f"Parameter {param_name} must be a number")
-            
-        # Range validation
-        if minimum is not None and value < minimum:
-            raise ValueError(f"Parameter {param_name} must be >= {minimum}")
-        if maximum is not None and value > maximum:
-            raise ValueError(f"Parameter {param_name} must be <= {maximum}")
-            
-    elif schema_type == "boolean":
-        if not isinstance(value, bool):
-            raise ValueError(f"Parameter {param_name} must be a boolean")
-            
-    elif schema_type == "array":
-        if not isinstance(value, list):
-            raise ValueError(f"Parameter {param_name} must be an array")
-            
-        # Validate array items if items schema is provided
-        items_schema = schema.get("items", {})
-        if items_schema:
-            for i, item in enumerate(value):
-                _validate_value_against_schema(item, items_schema, f"{param_name}[{i}]")
-                
-    elif schema_type == "object":
-        if not isinstance(value, dict):
-            raise ValueError(f"Parameter {param_name} must be an object")
-            
-        # Validate object properties
-        properties = schema.get("properties", {})
-        required_fields = schema.get("required", [])
-        
-        # Check required fields
-        for field in required_fields:
-            if field not in value:
-                raise ValueError(f"Missing required field in {param_name}: {field}")
-        
-        # Validate each property against its schema
-        for prop_name, prop_value in value.items():
-            if prop_name in properties:
-                prop_schema = properties[prop_name]
-                _validate_value_against_schema(prop_value, prop_schema, f"{param_name}.{prop_name}")
-    
-    # Enum validation (applies to all types)
-    if enum_values and value not in enum_values:
-        raise ValueError(f"Parameter {param_name} must be one of {enum_values}")
+        registered: List[str] = []
 
-def register_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any]) -> List[str]:
-    """
-    从 OpenAPI 文档批量注册 functions。返回已注册的 function 名称列表。
-    """
-    base_url = _choose_server(openapi_data)
-    paths = openapi_data.get("paths") or {}
-    headers = _build_headers(openapi_data, orgid, appid)
-
-    registered: List[str] = []
-
-    for path, methods in paths.items():
-        if not isinstance(methods, dict):
-            continue
-        for method, op in methods.items():
-            if method.lower() not in ("get", "post", "put", "patch", "delete", "head", "options"):
+        for path, methods in paths.items():
+            if not isinstance(methods, dict):
                 continue
+            for method, op in methods.items():
+                if method.lower() not in ("get", "post", "put", "patch", "delete", "head", "options"):
+                    continue
 
-            name = op.get("operationId") or _make_function_name(method, path)
-            parameters, body_schema = _collect_parameters(op, openapi_data)
-            response_schema = _extract_response_schema(op, openapi_data)
+                name = op.get("operationId") or _make_function_name(method, path)
+                parameters, body_schema = _collect_parameters(op, openapi_data)
+                response_schema = _extract_response_schema(op, openapi_data)
 
-            # 生成可调用
-            call = _make_rest_callable(method, f"{base_url}{path}", headers, parameters, body_schema)
+                # 生成工具元数据而不是可执行函数
+                tool_metadata = {
+                    "type": "rest_api",
+                    "method": method,
+                    "url_template": f"{base_url}{path}",
+                    "headers": headers,
+                    "parameters": parameters,
+                    "body_schema": body_schema
+                }
 
-            # 生成 LLM function schema
-            schema = {
-                "name": name,
-                "description": op.get("summary") or op.get("description") or "",
-                "parameters": _build_llm_parameters_schema(parameters, body_schema),
-                "output_schema": response_schema
-            }
+                # 生成 LLM tool schema
+                schema = {
+                    "name": name,
+                    "description": op.get("summary") or op.get("description") or "",
+                    "parameters": _build_llm_parameters_schema(parameters, body_schema),
+                    "output_schema": response_schema
+                }
 
-            registry.register_function(name, call, schema, orgid, appid)
-            registered.append(name)
-            log.info(f"Registered function: {name} ({method.upper()} {path}) for org={orgid} app={appid}")
+                registry.register_function(name, tool_metadata, schema, orgid, appid)
+                registered.append(name)
+                log.info(f"Registered tool: {name} ({method.upper()} {path}) for org={orgid} app={appid}")
 
-    return registered
+        return registered
+    
+    @staticmethod
+    def unregister_tools_by_origin(orgid: str, appid: str, names: List[str]):
+        """
+        根据来源取消注册工具
+        """
+        registry.unregister_by_origin(orgid, appid, names)
+
+
+# Global instance
+tool_registry = ToolRegistry()

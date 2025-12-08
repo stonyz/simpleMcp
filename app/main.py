@@ -7,7 +7,7 @@ from app.db import engine, Base, get_db, get_db_context
 from app.db import crud
 from app.common.exception_handlers import register_exception_handlers
 
-from app.mcp.openapi_loader import register_from_openapi
+from app.mcp.tool_registry import tool_registry
 import os
 import pkgutil
 import importlib
@@ -67,7 +67,7 @@ async def on_startup():
         for f in files:
             try:
                 data = yaml.safe_load(f.openapi_yaml)
-                names = register_from_openapi(f.orgid, f.appid, data)
+                names = tool_registry.register_tools_from_openapi(f.orgid, f.appid, data)
                 total_funcs += len(names)
             except Exception as e:
                 log.exception(f"Failed to register OpenAPI (org={f.orgid}, app={f.appid}, title={f.title}): {e}")

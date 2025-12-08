@@ -1,18 +1,20 @@
-from typing import Dict, Callable, Any, List, Optional
+from typing import Dict, Any, List, Optional
 import threading
+
 
 class MCPRegistry:
     """
     动态函数注册表。支持按 orgid/appid 过滤查询，并提供调用入口。
+    现在存储的是工具元数据而不是可执行函数。
     """
     def __init__(self):
         self._lock = threading.RLock()
-        # key: function name（全局唯一），value: dict(func, schema, orgid, appid)
+        # key: tool name（全局唯一），value: dict(metadata, schema, orgid, appid)
         self._registry: Dict[str, Dict[str, Any]] = {}
 
-    def register_function(self, name: str, func: Callable, schema: dict, orgid: str, appid: str):
+    def register_function(self, name: str, metadata: Dict[str, Any], schema: dict, orgid: str, appid: str):
         with self._lock:
-            self._registry[name] = {"func": func, "schema": schema, "orgid": orgid, "appid": appid}
+            self._registry[name] = {"func": metadata, "schema": schema, "orgid": orgid, "appid": appid}
 
     def unregister_function(self, name: str):
         with self._lock:
@@ -39,19 +41,15 @@ class MCPRegistry:
                 out.append(d["schema"])
             return out
 
-    def call_function(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs):
+    def get_tool_metadata(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the metadata for a tool by name.
+        This is used by the executor to retrieve tool information.
+        """
         with self._lock:
             item = self._registry.get(name)
-        if not item:
-            raise ValueError(f"Function '{name}' not found")
-        
-        # 进行 orgid/appid 权限检查（只有当提供了这些参数时才检查）
-        if orgid and item["orgid"] != orgid:
-            raise ValueError(f"Function '{name}' not accessible for orgid '{orgid}'. Function belongs to orgid '{item['orgid']}'")
-        if appid and item["appid"] != appid:
-            raise ValueError(f"Function '{name}' not accessible for appid '{appid}'. Function belongs to appid '{item['appid']}'")
-            
-        return item["func"](**kwargs)
+            return item["func"] if item else None
+
 
 # 全局单例
 registry = MCPRegistry()

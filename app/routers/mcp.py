@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
+from app.mcp.tool_executor import tool_executor
 from app.mcp.registry import registry
 from app.config import settings
 import json
@@ -37,7 +38,7 @@ async def mcp_call(
     }
     """
     try:
-        result = registry.call_function(function_name, orgid=orgid, appid=appid, **parameters)
+        result = tool_executor.execute_tool(function_name, orgid=orgid, appid=appid, **parameters)
         return {"status": "success", "result": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -124,7 +125,7 @@ async def mcp_jsonrpc(request: Request):
             call_appid = params.get("appid") or header_appid
             
             try:
-                result = registry.call_function(name, orgid=call_orgid, appid=call_appid, **arguments)
+                result = tool_executor.execute_tool(name, orgid=call_orgid, appid=call_appid, **arguments)
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 

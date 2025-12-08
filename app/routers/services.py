@@ -5,10 +5,8 @@ from typing import Optional
 import yaml, json
 from app.db import get_db, get_db_context
 from app.db import crud
-from app.mcp.openapi_loader import register_from_openapi
+from app.mcp.tool_registry import tool_registry
 import logging
-
-from app.mcp.registry import registry
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -25,7 +23,7 @@ async def _register_openapi_logic(org: str, app: str, fileId: str, fileName: str
     with get_db_context() as db:
         obj, updated = crud.upsert_openapi_file(db, org, app, fileId, fileName, openapi_data)
 
-    registered = register_from_openapi(org, app, openapi_data)
+    registered = tool_registry.register_tools_from_openapi(org, app, openapi_data)
     return {
         "status": "success",
         "updated": updated,
@@ -137,7 +135,7 @@ async def delete_openapi(
                 names.append(fname)
 
         # 从注册表卸载
-        registry.unregister_by_origin(orgid, appid, names)
+        tool_registry.unregister_tools_by_origin(orgid, appid, names)
 
         # 从数据库删除
         count = crud.delete_openapi_file(db, orgid, appid, fileId)
