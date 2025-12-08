@@ -1,7 +1,5 @@
-from fastapi import FastAPI, Request
-from starlette.middleware.cors import CORSMiddleware
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-
 from app.logger import request_logger
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -22,7 +20,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 body_str = req_body_bytes.decode('utf-8') if req_body_bytes else ""
 
         query_str = f"?{request.query_params}" if request.query_params else ""
-
+        
+        # 获取请求头
+        headers_dict = dict(request.headers)
+        
         # 组合日志内容
         log_msg = f"{request.method} {request.url.path}{query_str}"
 
@@ -32,19 +33,19 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         if "text/event-stream" in response.headers.get("Content-Type", ""):
             # 对于 SSE，不处理响应体
-            request_logger.info(f"{log_msg} {response.status_code} (SSE Connection)")
+            request_logger.info(f"{log_msg} {response.status_code} (SSE Connection)\nHeaders: {headers_dict}")
             return response
 
         response_body = b""
         async for chunk in response.body_iterator:
             response_body += chunk
 
-        # 重新创建 StreamingResponse，确保响应内容仍能正确返回
+        # 重新创建 Response，确保响应内容仍能正确返回
         from starlette.responses import Response
         response = Response(content=response_body, status_code=response.status_code, headers=dict(response.headers))
 
         # 解析并记录响应体
         response_text = response_body.decode("utf-8") if response_body else ""
-        request_logger.info(f"{log_msg} {response.status_code}\n ReqBody:{body_str}\n Resp:{response_text}\n")
+        request_logger.info(f"{log_msg} {response.status_code}\nHeaders: {headers_dict}\nReqBody:{body_str}\nResp:{response_text}\n")
 
         return response
