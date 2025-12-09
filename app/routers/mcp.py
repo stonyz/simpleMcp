@@ -38,8 +38,10 @@ async def mcp_call(
     }
     """
     try:
-        result = tool_executor.execute_tool(function_name, orgid=orgid, appid=appid, **parameters)
-        return {"status": "success", "result": result}
+        errorMessage, result, meta = tool_executor.execute_tool(function_name, orgid=orgid, appid=appid, **parameters)
+        if errorMessage:
+            return {"status": "error", "error": errorMessage, "meta": meta}
+        return {"status": "success", "result": result, "meta": meta}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -125,7 +127,9 @@ async def mcp_jsonrpc(request: Request):
             call_appid = params.get("appid") or header_appid
             
             try:
-                result = tool_executor.execute_tool(name, orgid=call_orgid, appid=call_appid, **arguments)
+                errorMessage, result, meta = tool_executor.execute_tool(name, orgid=call_orgid, appid=call_appid, **arguments)
+                if errorMessage:
+                    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": errorMessage, "data": {"meta": meta}}}
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 
@@ -138,14 +142,19 @@ async def mcp_jsonrpc(request: Request):
                 except Exception:
                     text_payload = str(result)
 
+            # Add extra information to the response
+            response_content = {
+                "content": [
+                    {"type": "text", "text": text_payload}
+                ]
+            }
+            if meta:
+                response_content["meta"] = meta
+
             return {
                 "jsonrpc": "2.0",
                 "id": rpc_id,
-                "result": {
-                    "content": [
-                        {"type": "text", "text": text_payload}
-                    ]
-                }
+                "result": response_content
             }
 
         return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32601, "message": "Method not found"}}

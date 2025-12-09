@@ -123,7 +123,7 @@ class MCPRegistry:
             if key:
                 item = self._registry.get(key)
                 if item:
-                    return item["func"]
+                    return key, item["func"]
             
             return None
 

@@ -265,13 +265,14 @@ class ToolExecutor:
     """
     
     @staticmethod
-    def execute_tool(name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs) -> Any:
+    def execute_tool(name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """
         Execute a tool by name with the given parameters.
         This method retrieves the tool metadata from the registry and creates an executable function.
+        Returns a dictionary with the result and extra identity information.
         """
         # First, get the tool metadata from the registry
-        tool_metadata = registry.get_tool_metadata(name, orgid, appid)
+        tool_identity, tool_metadata = registry.get_tool_metadata(name, orgid, appid)
         
         if not tool_metadata:
             raise ValueError(f"Tool '{name}' not found")
@@ -288,7 +289,15 @@ class ToolExecutor:
                 tool_metadata["security_schemes"]
             )
             # Execute the function with the provided arguments
-            return executable_func(**kwargs)
+            identity = dict(zip(["orgid", "appid", "name"], tool_identity))
+            try:
+                result = executable_func(**kwargs)
+                return None, result, identity
+            except Exception as e:
+                return str(e), None, identity
+
+            
+            
         else:
             raise ValueError(f"Unsupported tool type: {tool_metadata['type']}")
 
