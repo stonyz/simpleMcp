@@ -270,6 +270,72 @@ POST /mcp/call
 
 Tokens are cached in memory to avoid unnecessary requests to the OAuth2 provider. Tokens are automatically refreshed before they expire.
 
+## Bearer Token Authentication
+
+When an OpenAPI specification includes an HTTP Bearer security scheme, the MCP server can use a pre-obtained bearer token from the `arguments.auth` field and automatically add it as an Authorization header for requests to the upstream service.
+
+### OpenAPI Specification
+
+```yaml
+openapi: 3.1.0
+info:
+  title: Example API
+  version: 1.0.0
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT  # 可选，标注一下令牌类型（可写 JWT/opaque token/Signed Token 等）
+
+security:
+  - bearerAuth: []
+```
+
+### Client Usage
+
+When calling MCP services, include the bearer token in the `auth` field within `arguments`:
+
+```json
+{
+  "id": 2,
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "checkBearerAuth",
+    "arguments": {
+      "auth": {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }
+    }
+  }
+}
+```
+
+Alternatively, you can use the direct /call endpoint:
+
+```json
+POST /mcp/call
+{
+  "function_name": "checkBearerAuth",
+  "parameters": {},
+  "auth": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+### Processing Flow
+
+1. Client sends a request with `arguments.auth` containing a bearer token
+2. MCP server extracts the `auth` object from arguments
+3. MCP server uses the provided bearer token directly
+4. MCP server adds the token as a Bearer token in the Authorization header
+5. MCP server removes the `auth` object from arguments to prevent it from being sent as a parameter
+6. MCP server makes the upstream request with the Bearer token
+7. Upstream service authenticates the request using the Bearer token
+
 ## Multi-Tenant Isolation
 
 MCP Server supports multi-tenant isolation through `orgId` and `appId`. We provide multiple ways to pass these parameters to accommodate different MCP clients.

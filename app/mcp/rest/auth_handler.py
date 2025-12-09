@@ -64,8 +64,13 @@ class AuthHandler:
         if not isinstance(auth_info, dict):
             return final_headers
             
+        # Handle bearer token
+        if "access_token" in auth_info:
+            access_token = auth_info["access_token"]
+            final_headers["Authorization"] = f"Bearer {access_token}"
+            
         # Handle basic auth
-        if "username" in auth_info and "password" in auth_info:
+        elif "username" in auth_info and "password" in auth_info:
             # Extract username and password
             username = auth_info["username"]
             password = auth_info["password"]
