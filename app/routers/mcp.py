@@ -105,7 +105,7 @@ async def mcp_jsonrpc(request: Request):
                 tool = {
                     "name": s.get("name"),
                     "description": s.get("description", ""),
-                    "inputSchema": s.get("parameters") or {"type": "object", "properties": {}}
+                    "inputSchema": s.get("input_schema") or {"type": "object", "properties": {}}
                 }
                 # 添加 outputSchema 如果存在
                 if s.get("output_schema"):

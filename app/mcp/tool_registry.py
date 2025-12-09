@@ -231,7 +231,8 @@ def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: 
             "properties": {},
             "required": []
         }
-        
+        req.append("auth")
+
         # 根据不同的安全方案类型，添加相应的属性
         for scheme in security_schemes:
             scheme_type = scheme.get("type")
@@ -347,7 +348,7 @@ class ToolRegistry:
                     continue
 
                 name = op.get("operationId") or _make_function_name(method, path)
-                parameters, body_schema = _collect_parameters(op, openapi_data)
+                parameters, request_body_schema = _collect_parameters(op, openapi_data)
                 response_schema = _extract_response_schema(op, openapi_data)
                 security_schemes = _extract_security_schemes(openapi_data)
 
@@ -358,7 +359,8 @@ class ToolRegistry:
                     "url_template": f"{base_url}{path}",
                     "headers": headers,
                     "parameters": parameters,
-                    "body_schema": body_schema
+                    "body_schema": request_body_schema,
+                    "security_schemes": security_schemes
                 }
 
                 # 生成 LLM tool schema
@@ -373,7 +375,7 @@ class ToolRegistry:
                 schema = {
                     "name": name,
                     "description": base_description,
-                    "parameters": _build_llm_parameters_schema(parameters, body_schema, security_schemes),
+                    "input_schema": _build_llm_parameters_schema(parameters, request_body_schema, security_schemes),
                     "output_schema": response_schema
                 }
 

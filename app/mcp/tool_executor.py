@@ -7,14 +7,14 @@ from app.mcp.rest.auth_handler import AuthHandler
 log = logging.getLogger(__name__)
 
 
-def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]):
+def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]]):
     """
     生成实际的可调用函数：将 kwargs 映射到 path / query / body
     添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
     """
     def func(**kwargs):
         # Validate all parameters including auth according to OpenAPI specification
-        _validate_parameters(kwargs, parameters, body_schema)
+        _validate_parameters(kwargs, parameters, body_schema, security_schemes)
         
         # Create a copy of headers to avoid modifying the original
         final_headers = headers.copy()
@@ -56,7 +56,7 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
     return func
 
 
-def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]):
+def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]]):
     """
     验证参数是否符合 OpenAPI 规范
     检查必需参数是否存在以及参数值是否符合 schema 定义
@@ -79,6 +79,30 @@ def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]
     # Validate body parameters
     if body_schema:
         _validate_value_against_schema(kwargs, body_schema, "request body")
+    if security_schemes: 
+        if 'auth' not in kwargs:
+            raise ValueError("Missing required parameter: auth")
+        
+        # Validate auth against security schemes - at least one must pass
+        auth_validation_passed = False
+        validation_errors = []
+        
+        for i, security_scheme in enumerate(security_schemes):
+            try:
+                _validate_auth_against_security_scheme(kwargs["auth"], security_scheme)
+                auth_validation_passed = True
+                break  # If one scheme passes, we're good
+            except ValueError as e:
+                validation_errors.append(f"Security scheme {i+1} - {str(e)}")
+                continue  # Try the next scheme
+        
+        if not auth_validation_passed:
+            # Provide more precise error message when there's only one security scheme
+            if len(security_schemes) == 1:
+                raise ValueError(f"Auth validation failed: {validation_errors[0]}")
+            else:
+                error_details = '; '.join(validation_errors)
+                raise ValueError(f"Auth validation failed against all security schemes: {error_details}")
 
 
 def _validate_value_against_schema(value: Any, schema: Dict[str, Any], param_name: str):
@@ -171,6 +195,69 @@ def _validate_value_against_schema(value: Any, schema: Dict[str, Any], param_nam
         raise ValueError(f"Parameter {param_name} must be one of {enum_values}")
 
 
+def _validate_auth_against_security_scheme(auth_value: Any, security_scheme: Dict[str, Any]):
+    """
+    Specialized validation for auth parameter against a security scheme.
+    Unlike general parameter validation, this handles the specific requirements
+    of authentication where at least one security scheme must be satisfied.
+    """
+    if not isinstance(auth_value, dict):
+        raise ValueError("Auth parameter must be a dictionary/object")
+    
+    # Get the security scheme type
+    scheme_type = security_scheme.get("type")
+    
+    if scheme_type == "oauth2":
+        # For OAuth2, we expect client credentials or access_token
+        flows = security_scheme.get("flows", {})
+        client_credentials_flow = flows.get("clientCredentials", {})
+        
+        # Check if we have either direct access_token or client credentials
+        if "access_token" in auth_value:
+            # Direct access token provided
+            if not isinstance(auth_value["access_token"], str):
+                raise ValueError("access_token must be a string")
+        elif "client_id" in auth_value and "client_secret" in auth_value:
+            # Client credentials provided
+            if not isinstance(auth_value["client_id"], str):
+                raise ValueError("client_id must be a string")
+            if not isinstance(auth_value["client_secret"], str):
+                raise ValueError("client_secret must be a string")
+            
+            # Scopes are optional but if provided, must be a list
+            if "scopes" in auth_value and not isinstance(auth_value["scopes"], list):
+                raise ValueError("scopes must be a list")
+        else:
+            raise ValueError("For OAuth2, either access_token or client_id/client_secret must be provided")
+            
+    elif scheme_type == "http":
+        # For HTTP auth schemes like basic auth
+        auth_scheme = security_scheme.get("scheme", "")
+        
+        if auth_scheme.lower() == "basic":
+            # For basic auth, we expect username and password
+            if "username" not in auth_value:
+                raise ValueError("username is required for basic authentication")
+            if "password" not in auth_value:
+                raise ValueError("password is required for basic authentication")
+            
+            if not isinstance(auth_value["username"], str):
+                raise ValueError("username must be a string")
+            if not isinstance(auth_value["password"], str):
+                raise ValueError("password must be a string")
+        elif auth_scheme.lower() == "bearer":
+            # For bearer token, we expect a token
+            if "access_token" not in auth_value:
+                raise ValueError("access_token is required for bearer authentication")
+            
+            if not isinstance(auth_value["access_token"], str):
+                raise ValueError("access_token must be a string")
+        else:
+            raise ValueError(f"Unsupported HTTP authentication scheme: {auth_scheme}")
+    else:
+        raise ValueError(f"Unsupported security scheme type: {scheme_type}")
+
+
 class ToolExecutor:
     """
     ToolExecutor handles the actual execution of registered tools.
@@ -208,7 +295,8 @@ class ToolExecutor:
                 tool_metadata["url_template"],
                 tool_metadata["headers"],
                 tool_metadata["parameters"],
-                tool_metadata["body_schema"]
+                tool_metadata["body_schema"],
+                tool_metadata["security_schemes"]
             )
             # Execute the function with the provided arguments
             return executable_func(**kwargs)
