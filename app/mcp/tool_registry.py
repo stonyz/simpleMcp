@@ -330,7 +330,7 @@ class ToolRegistry:
     """
     
     @staticmethod
-    def register_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any]) -> List[str]:
+    def register_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[str]:
         """
         从 OpenAPI 文档批量注册 tools。返回已注册的 tool 名称列表。
         """
@@ -351,7 +351,7 @@ class ToolRegistry:
                 parameters, request_body_schema = _collect_parameters(op, openapi_data)
                 response_schema = _extract_response_schema(op, openapi_data)
                 security_schemes = _extract_security_schemes(openapi_data)
-
+                
                 # 生成工具元数据而不是可执行函数
                 tool_metadata = {
                     "type": "rest_api",
@@ -360,7 +360,9 @@ class ToolRegistry:
                     "headers": headers,
                     "parameters": parameters,
                     "body_schema": request_body_schema,
-                    "security_schemes": security_schemes
+                    "security_schemes": security_schemes,
+                    "fileId": fileId,  # 添加 fileId 到元数据
+                    "fileName": fileName  # 添加 fileName 到元数据
                 }
 
                 # 生成 LLM tool schema

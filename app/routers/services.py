@@ -23,7 +23,7 @@ async def _register_openapi_logic(org: str, app: str, fileId: str, fileName: str
     with get_db_context() as db:
         obj, updated = crud.upsert_openapi_file(db, org, app, fileId, fileName, openapi_data)
 
-    registered = tool_registry.register_tools_from_openapi(org, app, openapi_data)
+    registered = tool_registry.register_tools_from_openapi(org, app, openapi_data, fileId, fileName)
     return {
         "status": "success",
         "updated": updated,

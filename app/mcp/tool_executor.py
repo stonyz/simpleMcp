@@ -290,6 +290,13 @@ class ToolExecutor:
             )
             # Execute the function with the provided arguments
             identity = dict(zip(["orgid", "appid", "name"], tool_identity))
+            
+            # 从工具元数据中获取 fileId 和 fileName 并添加到 meta
+            if "fileId" in tool_metadata and tool_metadata["fileId"] is not None:
+                identity["fileId"] = tool_metadata["fileId"]
+            if "fileName" in tool_metadata and tool_metadata["fileName"] is not None:
+                identity["fileName"] = tool_metadata["fileName"]
+                
             try:
                 result = executable_func(**kwargs)
                 return None, result, identity

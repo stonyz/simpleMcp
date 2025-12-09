@@ -67,7 +67,7 @@ async def on_startup():
         for f in files:
             try:
                 data = yaml.safe_load(f.openapi_yaml)
-                names = tool_registry.register_tools_from_openapi(f.orgid, f.appid, data)
+                names = tool_registry.register_tools_from_openapi(f.orgid, f.appid, data, f.fileId, f.fileName)
                 total_funcs += len(names)
             except Exception as e:
                 log.exception(f"Failed to register OpenAPI (org={f.orgid}, app={f.appid}, title={f.title}): {e}")
