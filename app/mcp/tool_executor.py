@@ -13,6 +13,9 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
     添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
     """
     def func(**kwargs):
+        # Validate all parameters including auth according to OpenAPI specification
+        _validate_parameters(kwargs, parameters, body_schema)
+        
         # Create a copy of headers to avoid modifying the original
         final_headers = headers.copy()
         
@@ -23,9 +26,6 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
             final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
             # Remove auth from kwargs so it's not passed as a parameter
             del kwargs["auth"]
-        
-        # Validate parameters according to OpenAPI specification
-        _validate_parameters(kwargs, parameters, body_schema)
         
         # path 替换
         url = url_template
@@ -39,7 +39,7 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
                 if name in kwargs:
                     query[name] = kwargs[name]
             # header/cookie 可按需扩展到 requests 参数，这里先由 _build_headers 统一处理公共 header
-
+        
         # body
         body = None
         if body_schema:
@@ -50,7 +50,7 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
                 # 非 object 的 body，用专用字段接收
                 if "body" in kwargs:
                     body = kwargs["body"]
-
+        
         # Execute the REST call
         return execute_rest_call(method, url, final_headers, query, body)
     return func
@@ -61,7 +61,7 @@ def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]
     验证参数是否符合 OpenAPI 规范
     检查必需参数是否存在以及参数值是否符合 schema 定义
     """
-    # Validate path and query parameters
+    # Validate all parameters including auth
     for param in parameters:
         name = param.get("name")
         where = param.get("in")

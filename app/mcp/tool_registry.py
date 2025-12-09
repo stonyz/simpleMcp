@@ -180,7 +180,7 @@ def _extract_response_schema(op: Dict[str, Any], openapi_data: Dict[str, Any]) -
     return None
 
 
-def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: Dict[str, Any]) -> Dict[str, Any]:
+def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     组合 path/query/cookie/header 参数 + JSON body 的 properties
     → 生成 OpenAI/Function Calling 兼容的 JSON Schema: {type:"object",properties,required}
@@ -221,6 +221,60 @@ def _build_llm_parameters_schema(parameters: List[Dict[str, Any]], body_schema: 
             # 如果 body 是非 object（如 array/string），统一封装成一个 body 字段
             props["body"] = copy.deepcopy(body_schema)
             req.append("body")
+            
+    # 添加安全认证参数
+    if security_schemes:
+        # 添加一个通用的 auth 参数来支持不同的认证方式
+        props["auth"] = {
+            "type": "object",
+            "description": "Authentication information for the request",
+            "properties": {},
+            "required": []
+        }
+        
+        # 根据不同的安全方案类型，添加相应的属性
+        for scheme in security_schemes:
+            scheme_type = scheme.get("type")
+            if scheme_type == "http":
+                scheme_name = scheme.get("scheme")
+                if scheme_name == "basic":
+                    # Basic Auth
+                    props["auth"]["properties"]["username"] = {
+                        "type": "string",
+                        "description": "Username for basic authentication"
+                    }
+                    props["auth"]["properties"]["password"] = {
+                        "type": "string",
+                        "description": "Password for basic authentication"
+                    }
+                    props["auth"]["required"].extend(["username", "password"])
+                elif scheme_name == "bearer":
+                    # Bearer Token
+                    props["auth"]["properties"]["access_token"] = {
+                        "type": "string",
+                        "description": "Bearer token for authentication"
+                    }
+                    props["auth"]["required"].append("access_token")
+            elif scheme_type == "oauth2":
+                # OAuth2 Client Credentials
+                props["auth"]["properties"]["client_id"] = {
+                    "type": "string",
+                    "description": "Client ID for OAuth2 authentication"
+                }
+                props["auth"]["properties"]["client_secret"] = {
+                    "type": "string",
+                    "description": "Client secret for OAuth2 authentication"
+                }
+                props["auth"]["properties"]["token_url"] = {
+                    "type": "string",
+                    "description": "Token URL for OAuth2 authentication"
+                }
+                props["auth"]["properties"]["scopes"] = {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Scopes for OAuth2 authentication"
+                }
+                props["auth"]["required"].extend(["client_id", "client_secret"])
 
     return {"type": "object", "properties": props, "required": req}
 
@@ -231,6 +285,27 @@ def _choose_server(openapi: Dict[str, Any]) -> str:
     return base_url.rstrip("/")
 
 
+def _extract_security_schemes(openapi: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    提取 OpenAPI 规范中的安全方案信息
+    """
+    components = (openapi.get("components") or {}).get("securitySchemes") or {}
+    security_schemes = []
+    
+    for scheme_name, scheme_def in components.items():
+        scheme_info = {
+            "name": scheme_name,
+            "type": scheme_def.get("type"),
+            "scheme": scheme_def.get("scheme"),
+            "bearerFormat": scheme_def.get("bearerFormat"),
+            "flows": scheme_def.get("flows"),
+            "description": scheme_def.get("description", "")
+        }
+        security_schemes.append(scheme_info)
+    
+    return security_schemes
+
+
 def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str, str]:
     """
     简化版：支持 http bearer；可扩展 apiKey/oauth2 等。默认从环境变量拿 token。
@@ -238,7 +313,7 @@ def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str,
     """
     components = (openapi.get("components") or {}).get("securitySchemes") or {}
     security = openapi.get("security") or []  # 全局生效
-    headers: Dict[str, str] = {}
+    headers: Dict[str, Any] = {}
 
     token = os.environ.get("API_TOKEN") or settings.API_TOKEN
     if "bearerAuth" in components and token:
@@ -274,6 +349,7 @@ class ToolRegistry:
                 name = op.get("operationId") or _make_function_name(method, path)
                 parameters, body_schema = _collect_parameters(op, openapi_data)
                 response_schema = _extract_response_schema(op, openapi_data)
+                security_schemes = _extract_security_schemes(openapi_data)
 
                 # 生成工具元数据而不是可执行函数
                 tool_metadata = {
@@ -286,10 +362,18 @@ class ToolRegistry:
                 }
 
                 # 生成 LLM tool schema
+                base_description = op.get("summary") or op.get("description") or ""
+                # 将安全方案信息整合到描述中
+                if security_schemes:
+                    security_types = [scheme.get("type") for scheme in security_schemes if scheme.get("type")]
+                    if security_types:
+                        security_info = ", ".join(security_types)
+                        base_description = f"{base_description} (Supports: {security_info})".strip()
+                
                 schema = {
                     "name": name,
-                    "description": op.get("summary") or op.get("description") or "",
-                    "parameters": _build_llm_parameters_schema(parameters, body_schema),
+                    "description": base_description,
+                    "parameters": _build_llm_parameters_schema(parameters, body_schema, security_schemes),
                     "output_schema": response_schema
                 }
 
