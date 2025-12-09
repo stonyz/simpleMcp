@@ -271,22 +271,11 @@ class ToolExecutor:
         This method retrieves the tool metadata from the registry and creates an executable function.
         """
         # First, get the tool metadata from the registry
-        tool_metadata = registry.get_tool_metadata(name)
+        tool_metadata = registry.get_tool_metadata(name, orgid, appid)
         
         if not tool_metadata:
             raise ValueError(f"Tool '{name}' not found")
         
-        # Perform orgid/appid permission check (only when these parameters are provided)
-        with registry._lock:
-            item = registry._registry.get(name)
-        
-        if item:
-            # 进行 orgid/appid 权限检查（只有当提供了这些参数时才检查）
-            if orgid and item["orgid"] != orgid:
-                raise ValueError(f"Tool '{name}' not accessible for orgid '{orgid}'. Tool belongs to orgid '{item['orgid']}'")
-            if appid and item["appid"] != appid:
-                raise ValueError(f"Tool '{name}' not accessible for appid '{appid}'. Tool belongs to appid '{item['appid']}'")
-            
         # Based on the tool type, create and execute the appropriate function
         if tool_metadata["type"] == "rest_api":
             # Create the executable function
