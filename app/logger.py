@@ -42,6 +42,8 @@ class DailySizeDatedFileHandler(logging.Handler):
 
         self.current_date = self._today_str()
         self.stream = None
+        # 在初始化时也进行一次清理，确保即使应用重启也能清理旧文件
+        self._cleanup_old_files()
         self._open()
 
     def _today_str(self):
@@ -104,6 +106,35 @@ class DailySizeDatedFileHandler(logging.Handler):
         cur_file = self._build_filename(date_str)
         if os.path.exists(cur_file):
             os.rename(cur_file, self._build_filename(date_str, 1))
+
+    def _cleanup_old_files(self):
+        """清理超过 backup_days 的旧日志文件"""
+        if self.backup_days <= 0:
+            return
+            
+        # 计算应该保留的最早日期
+        cutoff_date = datetime.now() - timedelta(days=self.backup_days)
+        
+        # 查找所有匹配的日志文件
+        pattern = os.path.join(self.base_dir, f"{self.base_name}-*{self.base_ext}")
+        all_files = glob.glob(pattern)
+        
+        # 提取日期并删除过期文件
+        date_pattern = re.compile(rf"{self.base_name}-(\d{{4}}-\d{{2}}-\d{{2}})(?:-(\d+))?{self.base_ext}$")
+        
+        for file_path in all_files:
+            filename = os.path.basename(file_path)
+            match = date_pattern.search(filename)
+            if match:
+                try:
+                    file_date_str = match.group(1)
+                    file_date = datetime.strptime(file_date_str, self.date_fmt)
+                    # 如果文件日期早于截止日期，则删除文件
+                    if file_date < cutoff_date:
+                        os.remove(file_path)
+                except (ValueError, OSError):
+                    # 解析日期失败或删除文件失败，跳过该文件
+                    continue
 
     def emit(self, record: logging.LogRecord):
         try:
