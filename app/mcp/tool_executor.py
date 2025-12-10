@@ -1,59 +1,59 @@
 import logging
 from typing import Dict, Any, Optional, List
-from app.mcp.registry import registry
 from app.mcp.rest.executor import execute_rest_call
 from app.mcp.rest.auth_handler import AuthHandler
+from app.mcp.registry import MCPRegistry
 
 log = logging.getLogger(__name__)
 
 
-def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]]):
+def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]], **kwargs):
     """
     生成实际的可调用函数：将 kwargs 映射到 path / query / body
     添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
     """
-    def func(**kwargs):
-        # Validate all parameters including auth according to OpenAPI specification
-        _validate_parameters(kwargs, parameters, body_schema, security_schemes)
-        
-        # Create a copy of headers to avoid modifying the original
-        final_headers = headers.copy()
-        
-        # Check if auth information is provided in arguments
-        # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
-        if "auth" in kwargs:
-            auth_info = kwargs["auth"]
-            final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
-            # Remove auth from kwargs so it's not passed as a parameter
-            del kwargs["auth"]
-        
-        # path 替换
-        url = url_template
-        query: Dict[str, Any] = {}
-        for p in parameters:
-            name = p.get("name")
-            where = p.get("in")
-            if name and where == "path":
-                url = url.replace(f"{{{name}}}", str(kwargs.get(name, "")))
-            elif name and where == "query":
-                if name in kwargs:
-                    query[name] = kwargs[name]
-            # header/cookie 可按需扩展到 requests 参数，这里先由 _build_headers 统一处理公共 header
-        
-        # body
-        body = None
-        if body_schema:
-            if body_schema.get("type") == "object":
-                keys = body_schema.get("properties", {}).keys()
-                body = {k: kwargs[k] for k in keys if k in kwargs}
-            else:
-                # 非 object 的 body，用专用字段接收
-                if "body" in kwargs:
-                    body = kwargs["body"]
-        
-        # Execute the REST call
-        return execute_rest_call(method, url, final_headers, query, body)
-    return func
+
+    # Validate all parameters including auth according to OpenAPI specification
+    _validate_parameters(kwargs, parameters, body_schema, security_schemes)
+    
+    # Create a copy of headers to avoid modifying the original
+    final_headers = headers.copy()
+    
+    # Check if auth information is provided in arguments
+    # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
+    if "auth" in kwargs:
+        auth_info = kwargs["auth"]
+        final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
+        # Remove auth from kwargs so it's not passed as a parameter
+        del kwargs["auth"]
+    
+    # path 替换
+    url = url_template
+    query: Dict[str, Any] = {}
+    for p in parameters:
+        name = p.get("name")
+        where = p.get("in")
+        if name and where == "path":
+            url = url.replace(f"{{{name}}}", str(kwargs.get(name, "")))
+        elif name and where == "query":
+            if name in kwargs:
+                query[name] = kwargs[name]
+        # header/cookie 可按需扩展到 requests 参数，这里先由 _build_headers 统一处理公共 header
+    
+    # body
+    body = None
+    if body_schema:
+        if body_schema.get("type") == "object":
+            keys = body_schema.get("properties", {}).keys()
+            body = {k: kwargs[k] for k in keys if k in kwargs}
+        else:
+            # 非 object 的 body，用专用字段接收
+            if "body" in kwargs:
+                body = kwargs["body"]
+    
+    # Execute the REST call
+    return execute_rest_call(method, url, final_headers, query, body)
+   
 
 
 def _validate_parameters(kwargs: Dict[str, Any], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]]):
@@ -258,56 +258,45 @@ def _validate_auth_against_security_scheme(auth_value: Any, security_scheme: Dic
         raise ValueError(f"Unsupported security scheme type: {scheme_type}")
 
 
-class ToolExecutor:
+
+"""
+ToolExecutor handles the actual execution of registered tools.
+This separates the execution logic from the registration/loading logic.
+"""
+def execute_tool(registry : MCPRegistry, name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
     """
-    ToolExecutor handles the actual execution of registered tools.
-    This separates the execution logic from the registration/loading logic.
+    Execute a tool by name with the given parameters.
+    This method retrieves the tool metadata from the registry and creates an executable function.
+    Returns a dictionary with the result and extra identity information.
     """
+    # First, get the tool metadata from the registry
+    tool_identity, tool_metadata = registry.get_tool_metadata(name, orgid, appid)
     
-    @staticmethod
-    def execute_tool(name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        """
-        Execute a tool by name with the given parameters.
-        This method retrieves the tool metadata from the registry and creates an executable function.
-        Returns a dictionary with the result and extra identity information.
-        """
-        # First, get the tool metadata from the registry
-        tool_identity, tool_metadata = registry.get_tool_metadata(name, orgid, appid)
+    if not tool_metadata:
+        raise ValueError(f"Tool '{name}' not found")
+    
+    # Based on the tool type, create and execute the appropriate function
+    if tool_metadata["type"] == "rest_api":
+        # Execute the function with the provided arguments
+        identity = dict(zip(["orgid", "appid", "name"], tool_identity))
         
-        if not tool_metadata:
-            raise ValueError(f"Tool '{name}' not found")
-        
-        # Based on the tool type, create and execute the appropriate function
-        if tool_metadata["type"] == "rest_api":
-            # Create the executable function
-            executable_func = _make_rest_callable(
+        # 从工具元数据中获取 fileId 和 fileName 并添加到 meta
+        if "fileId" in tool_metadata and tool_metadata["fileId"] is not None:
+            identity["fileId"] = tool_metadata["fileId"]
+        if "fileName" in tool_metadata and tool_metadata["fileName"] is not None:
+            identity["fileName"] = tool_metadata["fileName"]
+            
+        try:
+            result = _make_rest_callable(
                 tool_metadata["method"],
                 tool_metadata["url_template"],
                 tool_metadata["headers"],
                 tool_metadata["parameters"],
                 tool_metadata["body_schema"],
-                tool_metadata["security_schemes"]
-            )
-            # Execute the function with the provided arguments
-            identity = dict(zip(["orgid", "appid", "name"], tool_identity))
-            
-            # 从工具元数据中获取 fileId 和 fileName 并添加到 meta
-            if "fileId" in tool_metadata and tool_metadata["fileId"] is not None:
-                identity["fileId"] = tool_metadata["fileId"]
-            if "fileName" in tool_metadata and tool_metadata["fileName"] is not None:
-                identity["fileName"] = tool_metadata["fileName"]
-                
-            try:
-                result = executable_func(**kwargs)
-                return None, result, identity
-            except Exception as e:
-                return str(e), None, identity
-
-            
-            
-        else:
-            raise ValueError(f"Unsupported tool type: {tool_metadata['type']}")
-
-
-# Global instance
-tool_executor = ToolExecutor()
+                tool_metadata["security_schemes"], 
+                **kwargs)
+            return None, result, identity
+        except Exception as e:
+            return str(e), None, identity  
+    else:
+        raise ValueError(f"Unsupported tool type: {tool_metadata['type']}")

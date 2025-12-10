@@ -4,7 +4,7 @@ import os
 from typing import Dict, Any, List, Tuple, Optional
 from urllib.parse import urljoin
 
-from app.mcp.registry import registry
+from app.mcp.registry import MCPRegistry
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -323,77 +323,71 @@ def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str,
     return headers
 
 
-class ToolRegistry:
-    """
-    ToolRegistry handles the registration and loading of tools from various sources.
-    This separates the registration/loading logic from the execution logic.
-    """
-    
-    @staticmethod
-    def register_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[str]:
-        """
-        从 OpenAPI 文档批量注册 tools。返回已注册的 tool 名称列表。
-        """
-        base_url = _choose_server(openapi_data)
-        paths = openapi_data.get("paths") or {}
-        headers = _build_headers(openapi_data, orgid, appid)
 
-        registered: List[str] = []
+"""
+ToolRegistry handles the registration and loading of tools from various sources.
+This separates the registration/loading logic from the execution logic.
+"""
 
-        for path, methods in paths.items():
-            if not isinstance(methods, dict):
+def register_tools_from_openapi(registry: MCPRegistry, orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[str]:
+    """
+    从 OpenAPI 文档批量注册 tools。返回已注册的 tool 名称列表。
+    """
+    base_url = _choose_server(openapi_data)
+    paths = openapi_data.get("paths") or {}
+    headers = _build_headers(openapi_data, orgid, appid)
+
+    registered: List[str] = []
+
+    for path, methods in paths.items():
+        if not isinstance(methods, dict):
+            continue
+        for method, op in methods.items():
+            if method.lower() not in ("get", "post", "put", "patch", "delete", "head", "options"):
                 continue
-            for method, op in methods.items():
-                if method.lower() not in ("get", "post", "put", "patch", "delete", "head", "options"):
-                    continue
 
-                name = op.get("operationId") or _make_function_name(method, path)
-                parameters, request_body_schema = _collect_parameters(op, openapi_data)
-                response_schema = _extract_response_schema(op, openapi_data)
-                security_schemes = _extract_security_schemes(openapi_data)
-                
-                # 生成工具元数据而不是可执行函数
-                tool_metadata = {
-                    "type": "rest_api",
-                    "method": method,
-                    "url_template": f"{base_url}{path}",
-                    "headers": headers,
-                    "parameters": parameters,
-                    "body_schema": request_body_schema,
-                    "security_schemes": security_schemes,
-                    "fileId": fileId,  # 添加 fileId 到元数据
-                    "fileName": fileName  # 添加 fileName 到元数据
-                }
+            name = op.get("operationId") or _make_function_name(method, path)
+            parameters, request_body_schema = _collect_parameters(op, openapi_data)
+            response_schema = _extract_response_schema(op, openapi_data)
+            security_schemes = _extract_security_schemes(openapi_data)
+            
+            # 生成工具元数据而不是可执行函数
+            tool_metadata = {
+                "type": "rest_api",
+                "method": method,
+                "url_template": f"{base_url}{path}",
+                "headers": headers,
+                "parameters": parameters,
+                "body_schema": request_body_schema,
+                "security_schemes": security_schemes,
+                "fileId": fileId,  # 添加 fileId 到元数据
+                "fileName": fileName  # 添加 fileName 到元数据
+            }
 
-                # 生成 LLM tool schema
-                base_description = op.get("summary") or op.get("description") or ""
-                # 将安全方案信息整合到描述中
-                if security_schemes:
-                    security_types = [scheme.get("type") for scheme in security_schemes if scheme.get("type")]
-                    if security_types:
-                        security_info = ", ".join(security_types)
-                        base_description = f"{base_description} (Supports: {security_info})".strip()
-                
-                schema = {
-                    "name": name,
-                    "description": base_description,
-                    "input_schema": _build_llm_parameters_schema(parameters, request_body_schema, security_schemes),
-                    "output_schema": response_schema
-                }
+            # 生成 LLM tool schema
+            base_description = op.get("summary") or op.get("description") or ""
+            # 将安全方案信息整合到描述中
+            if security_schemes:
+                security_types = [scheme.get("type") for scheme in security_schemes if scheme.get("type")]
+                if security_types:
+                    security_info = ", ".join(security_types)
+                    base_description = f"{base_description} (Supports: {security_info})".strip()
+            
+            schema = {
+                "name": name,
+                "description": base_description,
+                "input_schema": _build_llm_parameters_schema(parameters, request_body_schema, security_schemes),
+                "output_schema": response_schema
+            }
 
-                registry.register_function(name, tool_metadata, schema, orgid, appid)
-                registered.append(name)
-                log.info(f"Registered tool: {name} ({method.upper()} {path}) for org={orgid} app={appid}")
+            registry.register_function(name, tool_metadata, schema, orgid, appid)
+            registered.append(name)
+            log.info(f"Registered tool: {name} ({method.upper()} {path}) for org={orgid} app={appid}")
 
-        return registered
-    
-    @staticmethod
-    def unregister_tools_by_origin(orgid: str, appid: str, names: List[str]):
-        """
-        根据来源取消注册工具
-        """
-        registry.unregister_by_origin(orgid, appid, names)
+    return registered
 
-
-# Global instance
-tool_registry = ToolRegistry()
+def unregister_tools_by_origin(registry: MCPRegistry, orgid: str, appid: str, names: List[str]):
+    """
+    根据来源取消注册工具
+    """
+    registry.unregister_by_origin(orgid, appid, names)

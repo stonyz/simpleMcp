@@ -5,13 +5,13 @@ from typing import Optional
 import yaml, json
 from app.db import get_db, get_db_context
 from app.db import crud
-from app.mcp.tool_registry import tool_registry
+from app.mcp.tenant_manager import tenant_manager
 import logging
 
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-async def _register_openapi_logic(org: str, app: str, fileId: str, fileName: str, openapi_data: dict):
+async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: str, fileName: str, openapi_data: dict):
     """
     公共的 OpenAPI 注册逻辑
     """
@@ -21,9 +21,9 @@ async def _register_openapi_logic(org: str, app: str, fileId: str, fileName: str
 
     # 使用现有的数据库操作方式
     with get_db_context() as db:
-        obj, updated = crud.upsert_openapi_file(db, org, app, fileId, fileName, openapi_data)
+        obj, updated = crud.upsert_openapi_file(db, tenant, org, app, fileId, fileName, openapi_data)
 
-    registered = tool_registry.register_tools_from_openapi(org, app, openapi_data, fileId, fileName)
+    registered = tenant_manager.register_tools_from_openapi(tenant, org, app, openapi_data, fileId, fileName)
     return {
         "status": "success",
         "updated": updated,
@@ -38,6 +38,7 @@ async def _register_openapi_logic(org: str, app: str, fileId: str, fileName: str
 
 @router.post("/register-form")
 async def register_openapi(
+    tenant: str = Query(..., alias="tenant"),
     org: str = Form(...),
     app: str = Form(...),
     fileId: str = Form(...),
@@ -53,10 +54,11 @@ async def register_openapi(
     else:
         raise HTTPException(status_code=400, detail="No file or YAML string provided")
 
-    return await _register_openapi_logic(org, app, fileId, fileName, openapi_data)
+    return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data)
 
 @router.post("/register")
 async def register_openapi_json(
+    tenant: str = Query(..., alias="tenant"),
     request_data: dict = Body(...)
 ):
     """
@@ -77,7 +79,7 @@ async def register_openapi_json(
         raise HTTPException(status_code=400, detail="yaml_content is required")
 
     openapi_data = parse_yaml_string(yaml_content)
-    return await _register_openapi_logic(org, app, fileId, fileName, openapi_data)
+    return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data)
 
 def parse_file_content(filename: str, content: bytes):
     """根据文件后缀解析内容"""
@@ -104,6 +106,7 @@ def parse_yaml_string(yaml_str: str):
 
 @router.delete("/delete")
 async def delete_openapi(
+    tenant: str = Query(..., alias="tenant"),
     orgid: str = Query(..., alias="org"),
     appid: str = Query(..., alias="app"),
     fileId: str = Query(...)
@@ -135,7 +138,7 @@ async def delete_openapi(
                 names.append(fname)
 
         # 从注册表卸载
-        tool_registry.unregister_tools_by_origin(orgid, appid, names)
+        tenant_manager.unregister_tools_by_origin(tenant, orgid, appid, names)
 
         # 从数据库删除
         count = crud.delete_openapi_file(db, orgid, appid, fileId)

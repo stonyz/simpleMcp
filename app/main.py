@@ -3,11 +3,12 @@ from app.config import settings
 from app.logger import setup_logging
 from app.midware.LoggingMiddleware import LoggingMiddleware
 from app.midware.AuthMiddleware import AuthMiddleware
+from app.midware.TenantMiddleware import TenantMiddleware
 from app.db import engine, Base, get_db, get_db_context
 from app.db import crud
 from app.common.exception_handlers import register_exception_handlers
 
-from app.mcp.tool_registry import tool_registry
+from app.mcp.tenant_manager import tenant_manager
 import os
 import pkgutil
 import importlib
@@ -20,6 +21,8 @@ log = logging.getLogger(__name__)
 app = FastAPI(title=settings.APP_NAME)
 
 # Add middleware
+
+app.add_middleware(TenantMiddleware)  # Add this first to handle tenant extraction
 app.add_middleware(AuthMiddleware)
 app.add_middleware(LoggingMiddleware)
 
@@ -67,7 +70,9 @@ async def on_startup():
         for f in files:
             try:
                 data = yaml.safe_load(f.openapi_yaml)
-                names = tool_registry.register_tools_from_openapi(f.orgid, f.appid, data, f.fileId, f.fileName)
+         
+                tenant = getattr(f, 'tenant', 'default')
+                names = tenant_manager.register_tools_from_openapi(tenant, f.orgid, f.appid, data, f.fileId, f.fileName)
                 total_funcs += len(names)
             except Exception as e:
                 log.exception(f"Failed to register OpenAPI (org={f.orgid}, app={f.appid}, title={f.title}): {e}")

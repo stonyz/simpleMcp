@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
-from app.mcp.tool_executor import tool_executor
-from app.mcp.registry import registry
+from app.mcp.tenant_manager import tenant_manager
+# from app.mcp.registry import registry
 from app.config import settings
 import json
 
@@ -10,6 +10,7 @@ router = APIRouter()
 
 @router.get("/list")
 async def mcp_list(
+    tenant: str = Query(..., alias="tenant"),
     orgid: Optional[str] = Query(None),
     appid: Optional[str] = Query(None),
     name: Optional[str] = Query(None),
@@ -18,10 +19,11 @@ async def mcp_list(
     MCP 风格的 list：返回 function schemas
     （你也可以保持与 /functions 一致）
     """
-    return registry.list_functions(orgid=orgid, appid=appid, name=name)
+    return tenant_manager.list_functions(tenant=tenant, orgid=orgid, appid=appid, name=name)
 
 @router.post("/call")
 async def mcp_call(
+    tenant: str = Query(..., alias="tenant"),
     function_name: str = Body(..., embed=True),
     parameters: Dict[str, Any] = Body(default_factory=dict, embed=True),
     orgid: Optional[str] = Body(None, embed=True),
@@ -38,7 +40,7 @@ async def mcp_call(
     }
     """
     try:
-        errorMessage, result, meta = tool_executor.execute_tool(function_name, orgid=orgid, appid=appid, **parameters)
+        errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name=function_name, orgid=orgid, appid=appid, **parameters)
         if errorMessage:
             return {"status": "error", "error": errorMessage, "meta": meta}
         return {"status": "success", "result": result, "meta": meta}
@@ -46,7 +48,10 @@ async def mcp_call(
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("")
-async def mcp_jsonrpc(request: Request):
+async def mcp_jsonrpc(
+    request: Request,
+    tenant: str = Query(..., alias="tenant")):
+
     """
     标准 MCP JSON-RPC 2.0 接口：支持 tools/list 与 tools/call（兼容 list_tools/call_tool），以及 initialize。
     - initialize: 返回协议版本、服务端能力与 serverInfo
@@ -101,7 +106,7 @@ async def mcp_jsonrpc(request: Request):
             appid = params.get("appid") or header_appid
             name: Optional[str] = params.get("name")
 
-            schemas = registry.list_functions(orgid=orgid, appid=appid, name=name)
+            schemas = tenant_manager.list_functions(tenant=tenant, orgid=orgid, appid=appid, name=name)
             tools = []
             for s in schemas:
                 tool = {
@@ -127,7 +132,7 @@ async def mcp_jsonrpc(request: Request):
             call_appid = params.get("appid") or header_appid
             
             try:
-                errorMessage, result, meta = tool_executor.execute_tool(name, orgid=call_orgid, appid=call_appid, **arguments)
+                errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name = name, orgid=call_orgid, appid=call_appid, **arguments)
                 if errorMessage:
                     return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": errorMessage, "data": {"meta": meta}}}
             except Exception as e:

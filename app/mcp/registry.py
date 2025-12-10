@@ -125,7 +125,7 @@ class MCPRegistry:
                 if item:
                     return key, item["func"]
             
-            return None
+            return None, None
 
 
 # 全局单例

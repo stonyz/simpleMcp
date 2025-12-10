@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Query
 from typing import Optional
-from app.mcp.registry import registry
+from app.mcp.tenant_manager import tenant_manager
 
 router = APIRouter()
 
 @router.get("/")
 async def list_functions(
+    tenant: str = Query(..., alias="tenant"),
     orgid: str = Query(...),
     appid: str = Query(...),
     name: Optional[str] = Query(None)
@@ -14,4 +15,4 @@ async def list_functions(
     返回大模型可直接使用的 function schema：
     [{"name": "...", "description": "...", "parameters": {...}} ...]
     """
-    return registry.list_functions(orgid=orgid, appid=appid, name=name)
+    return tenant_manager.list_functions(tenant=tenant, orgid=orgid, appid=appid, name=name)
