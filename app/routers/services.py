@@ -118,7 +118,7 @@ async def delete_openapi(
     """
     # 使用现有的数据库操作方式
     with get_db_context() as db:
-        obj = crud.get_one_openapi(db, orgid, appid, fileId)
+        obj = crud.get_one_openapi(db, tenant, orgid, appid, fileId)
         if not obj:
             raise HTTPException(status_code=404, detail="OpenAPI record not found")
 
@@ -141,6 +141,6 @@ async def delete_openapi(
         tenant_manager.unregister_tools_by_origin(tenant, orgid, appid, names)
 
         # 从数据库删除
-        count = crud.delete_openapi_file(db, orgid, appid, fileId)
+        count = crud.delete_openapi_file(db, tenant, orgid, appid, fileId)
 
     return {"deleted": count, "unregistered_functions": names}

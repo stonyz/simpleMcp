@@ -25,6 +25,7 @@ def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId
         return existed, True
 
     obj = OpenAPIFile(
+        tenant=tenant,
         orgid=orgid,
         appid=appid,
         fileId=fileId,
@@ -39,16 +40,19 @@ def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId
     db.refresh(obj)
     return obj, False
 
-def get_openapi_files(db: Session, orgid: Optional[str] = None, appid: Optional[str] = None) -> List[OpenAPIFile]:
+def get_openapi_files(db: Session, tenant: Optional[str] = None, orgid: Optional[str] = None, appid: Optional[str] = None) -> List[OpenAPIFile]:
     stmt = select(OpenAPIFile)
+    if tenant:
+        stmt = stmt.where(OpenAPIFile.tenant == tenant)
     if orgid:
         stmt = stmt.where(OpenAPIFile.orgid == orgid)
     if appid:
         stmt = stmt.where(OpenAPIFile.appid == appid)
     return list(db.execute(stmt).scalars().all())
 
-def get_one_openapi(db: Session, orgid: str, appid: str, fileId: str, version: Optional[str] = None) -> Optional[OpenAPIFile]:
+def get_one_openapi(db: Session, tenant: str, orgid: str, appid: str, fileId: str, version: Optional[str] = None) -> Optional[OpenAPIFile]:
     stmt = select(OpenAPIFile).where(
+        OpenAPIFile.tenant == tenant,
         OpenAPIFile.orgid == orgid,
         OpenAPIFile.appid == appid,
         OpenAPIFile.fileId == fileId,
@@ -57,8 +61,9 @@ def get_one_openapi(db: Session, orgid: str, appid: str, fileId: str, version: O
         stmt = stmt.where(OpenAPIFile.version == version)
     return db.execute(stmt).scalars().first()
 
-def delete_openapi_file(db: Session, orgid: str, appid: str, fileId: str, version: Optional[str] = None) -> int:
+def delete_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId: str, version: Optional[str] = None) -> int:
     stmt = delete(OpenAPIFile).where(
+        OpenAPIFile.tenant == tenant,
         OpenAPIFile.orgid == orgid,
         OpenAPIFile.appid == appid,
         OpenAPIFile.fileId == fileId,

@@ -5,6 +5,7 @@ class OpenAPIFile(Base):
     __tablename__ = "openapi_files"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant = Column(String(63), nullable=False)
     orgid = Column(String(64), nullable=False)
     appid = Column(String(64), nullable=False)
     fileId = Column(String(64), nullable=False)
@@ -17,6 +18,6 @@ class OpenAPIFile(Base):
 
 
     __table_args__ = (
-        UniqueConstraint("orgid", "appid", "fileId", name="uq_org_app_fileId"),
-        Index("idx_org_app", "orgid", "appid"),
+        UniqueConstraint("tenant", "orgid", "appid", "fileId", name="uq_ta_org_app_fileId"),
+        Index("idx_ta_org_app", "tenant", "orgid", "appid"),
     )
