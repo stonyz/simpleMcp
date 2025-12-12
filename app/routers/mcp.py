@@ -5,6 +5,8 @@ from app.mcp.tenant_manager import tenant_manager
 # from app.mcp.registry import registry
 from app.config import settings
 import json
+import logging
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -60,6 +62,7 @@ async def mcp_jsonrpc(
     - 支持通过 HTTP Headers 传递 orgid/appid: X-Org-ID, X-App-ID
     返回严格的 JSON-RPC 2.0 格式。
     """
+    request_logger.info(f"Received request: {request.method} {request.url}")
     try:
         body = await request.json()
     except Exception:

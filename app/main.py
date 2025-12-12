@@ -4,6 +4,7 @@ from app.logger import setup_logging
 from app.midware.LoggingMiddleware import LoggingMiddleware
 from app.midware.AuthMiddleware import AuthMiddleware
 from app.midware.TenantMiddleware import TenantMiddleware
+from app.midware.RequestIdMiddleware import RequestIdMiddleware
 from app.db import engine, Base, get_db, get_db_context
 from app.db import crud
 from app.common.exception_handlers import register_exception_handlers
@@ -21,10 +22,12 @@ log = logging.getLogger(__name__)
 app = FastAPI(title=settings.APP_NAME)
 
 # Add middleware
-
-app.add_middleware(TenantMiddleware)  # Add this first to handle tenant extraction
-app.add_middleware(AuthMiddleware)
-app.add_middleware(LoggingMiddleware)
+# 注意中间件的顺序很重要，按照请求处理的顺序排列
+# RequestIdMiddleware应该最后添加，这样它会最先执行，确保request_id在其他中间件中可用
+app.add_middleware(TenantMiddleware)  # 处理租户提取
+app.add_middleware(AuthMiddleware)    # 处理身份验证
+app.add_middleware(LoggingMiddleware) # 处理日志记录
+app.add_middleware(RequestIdMiddleware) # 最后添加，但最先执行，生成request_id
 
 # 注册全局异常处理器
 register_exception_handlers(app)

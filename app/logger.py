@@ -24,8 +24,16 @@ DATE_FMT = "%Y-%m-%d"
 # 默认保留最近 N 天（归档清理），不需要可设为 0
 BACKUP_DAYS = getattr(settings, "log_backup_days", 7)
 
-LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-formatter = logging.Formatter(LOG_FORMAT)
+# Import the RequestIdFormatter from the new middleware
+try:
+    from app.midware.RequestIdMiddleware import RequestIdFormatter
+    # Custom log format that includes the request ID
+    LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(request_id)s]: %(message)s"
+    formatter = RequestIdFormatter(LOG_FORMAT)
+except ImportError:
+    # Fallback to the original format if the middleware is not available
+    LOG_FORMAT = "%(asctime)s [%(levelname)s]: %(message)s"
+    formatter = logging.Formatter(LOG_FORMAT)
 
 loggers = {}  # 缓存已创建的 logger
 
