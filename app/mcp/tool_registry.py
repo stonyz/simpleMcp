@@ -303,24 +303,6 @@ def _extract_security_schemes(openapi: Dict[str, Any]) -> List[Dict[str, Any]]:
     
     return security_schemes
 
-
-def _build_headers(openapi: Dict[str, Any], orgid: str, appid: str) -> Dict[str, str]:
-    """
-    简化版：支持 http bearer；可扩展 apiKey/oauth2 等。默认从环境变量拿 token。
-    若要按 org/app 细分 token，可接入你的 secrets 表进行查找。
-    """
-    components = (openapi.get("components") or {}).get("securitySchemes") or {}
-    security = openapi.get("security") or []  # 全局生效
-    headers: Dict[str, Any] = {}
-
-    token = os.environ.get("API_TOKEN") or settings.API_TOKEN
-    if "bearerAuth" in components and token:
-        headers["Authorization"] = f"Bearer {token}"
-    # 你也可以在此扩展 apiKey in header/query 等
-    return headers
-
-
-
 """
 ToolRegistry handles the registration and loading of tools from various sources.
 This separates the registration/loading logic from the execution logic.
@@ -333,7 +315,6 @@ def parse_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any
     """
     base_url = _choose_server(openapi_data)
     paths = openapi_data.get("paths") or {}
-    headers = _build_headers(openapi_data, orgid, appid)
 
     tools_data: List[Dict[str, Any]] = []
 
@@ -354,7 +335,6 @@ def parse_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any
                 "type": "rest_api",
                 "method": method,
                 "url_template": f"{base_url}{path}",
-                "headers": headers,
                 "parameters": parameters,
                 "body_schema": request_body_schema,
                 "security_schemes": security_schemes,

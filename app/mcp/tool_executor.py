@@ -14,7 +14,6 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
     """
     method = tool_metadata["method"]
     url_template = tool_metadata["url_template"]
-    headers = tool_metadata["headers"]
     parameters = tool_metadata["parameters"]
     body_schema = tool_metadata["body_schema"]
     security_schemes = tool_metadata["security_schemes"]
@@ -34,14 +33,15 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
     _validate_parameters(kwargs, parameters, body_schema, security_schemes)
     
     # Create a copy of headers to avoid modifying the original
-    final_headers = headers.copy()
+    headers = {}
     
     # Process auth headers if we have auth data
     if "auth" in kwargs:
         auth_headers = AuthHandler.process_auth_headers(kwargs["auth"])
-        final_headers.update(auth_headers)  # Merge auth headers with existing headers
+        headers.update(auth_headers)  # Merge auth headers with existing headers
         del kwargs["auth"]
     
+
     # path 替换
     url = url_template
     query: Dict[str, Any] = {}
@@ -67,7 +67,7 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
                 body = kwargs["body"]
     
     # Execute the REST call
-    return execute_rest_call(method, url, final_headers, query, body)
+    return execute_rest_call(method, url, headers, query, body)
    
 
 
