@@ -358,6 +358,9 @@ def parse_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any
                 "parameters": parameters,
                 "body_schema": request_body_schema,
                 "security_schemes": security_schemes,
+                "orgid": orgid,
+                "appid": appid,
+                "tool_name": name,
                 "fileId": fileId,  # 添加 fileId 到元数据
                 "fileName": fileName  # 添加 fileName 到元数据
             }

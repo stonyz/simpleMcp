@@ -123,9 +123,9 @@ class MCPRegistry:
             if key:
                 item = self._registry.get(key)
                 if item:
-                    return key, item["func"]
+                    return item["func"]
             
-            return None, None
+            return None
 
 
 # 全局单例

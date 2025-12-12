@@ -2,7 +2,6 @@ import logging
 from typing import Dict, Any, Optional, List
 from app.mcp.rest.executor import execute_rest_call
 from app.mcp.rest.auth_handler import AuthHandler
-from app.mcp.registry import MCPRegistry
 
 log = logging.getLogger(__name__)
 
@@ -268,33 +267,13 @@ def _validate_auth_against_security_scheme(auth_value: Any, security_scheme: Dic
 ToolExecutor handles the actual execution of registered tools.
 This separates the execution logic from the registration/loading logic.
 """
-def execute_tool(registry : MCPRegistry, name: str, orgid: Optional[str] = None, appid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-    """
-    Execute a tool by name with the given parameters.
-    This method retrieves the tool metadata from the registry and creates an executable function.
-    Returns a dictionary with the result and extra identity information.
-    """
-    # First, get the tool metadata from the registry
-    tool_identity, tool_metadata = registry.get_tool_metadata(name, orgid, appid)
-    
-    if not tool_metadata:
-        raise ValueError(f"Tool '{name}' not found")
-    
+def execute_tool(tool_metadata, **kwargs) -> Dict[str, Any]:    
     # Based on the tool type, create and execute the appropriate function
-    if tool_metadata["type"] == "rest_api":
-        # Execute the function with the provided arguments
-        identity = dict(zip(["orgid", "appid", "name"], tool_identity))
-        
-        # 从工具元数据中获取 fileId 和 fileName 并添加到 meta
-        if "fileId" in tool_metadata and tool_metadata["fileId"] is not None:
-            identity["fileId"] = tool_metadata["fileId"]
-        if "fileName" in tool_metadata and tool_metadata["fileName"] is not None:
-            identity["fileName"] = tool_metadata["fileName"]
-            
+    if tool_metadata["type"] == "rest_api":         
         try:
             result = _make_rest_callable(tool_metadata, **kwargs)
-            return None, result, identity
+            return None, result
         except Exception as e:
-            return str(e), None, identity  
+            return str(e), None  
     else:
         raise ValueError(f"Unsupported tool type: {tool_metadata['type']}")

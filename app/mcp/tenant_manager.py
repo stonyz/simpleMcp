@@ -71,7 +71,19 @@ class TenantManager:
         Execute a tool. Tenant parameter is accepted but not used in current implementation.
         """
         tenant_registry = self.get_tenant_registry(tenant)
-        return execute_tool(tenant_registry, name, orgid=orgid, appid=appid, **kwargs)
+        tool_metadata = tenant_registry.get_tool_metadata(name, orgid=orgid, appid=appid)
+        if not tool_metadata:
+            raise ValueError(f"Tool '{name}' not found")
+
+        # 从工具元数据中获取身份信息并添加到 meta
+        identity = {
+            field: tool_metadata[field] 
+            for field in ["orgid", "appid", "fileId", "fileName", "tool_name"] 
+            if field in tool_metadata and tool_metadata[field] is not None
+        }
+        
+        result, response = execute_tool(tool_metadata, **kwargs)
+        return result, response, identity
 
 # Global instance
 tenant_manager = TenantManager()
