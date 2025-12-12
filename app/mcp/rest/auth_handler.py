@@ -57,17 +57,17 @@ class AuthHandler:
             raise
     
     @staticmethod
-    def process_auth_headers(headers: Dict[str, str], auth_info: Dict[str, Any]) -> Dict[str, str]:
-        """Process authentication information and add appropriate headers"""
-        final_headers = headers.copy()
+    def process_auth_headers(auth_info: Dict[str, Any]) -> Dict[str, str]:
+        """Process authentication information and return auth headers to be merged with existing headers"""
+        auth_headers = {}
         
         if not isinstance(auth_info, dict):
-            return final_headers
+            return auth_headers
             
         # Handle bearer token
         if "access_token" in auth_info:
             access_token = auth_info["access_token"]
-            final_headers["Authorization"] = f"Bearer {access_token}"
+            auth_headers["Authorization"] = f"Bearer {access_token}"
             
         # Handle basic auth
         elif "username" in auth_info and "password" in auth_info:
@@ -77,7 +77,7 @@ class AuthHandler:
             
             # Create basic auth header
             credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-            final_headers["Authorization"] = f"Basic {credentials}"
+            auth_headers["Authorization"] = f"Basic {credentials}"
             
         # Handle OAuth2 client credentials
         elif "client_id" in auth_info and "client_secret" in auth_info:
@@ -91,6 +91,6 @@ class AuthHandler:
             
             # Get access token
             access_token = AuthHandler._get_oauth2_token(token_url, client_id, client_secret, scopes)
-            final_headers["Authorization"] = f"Bearer {access_token}"
+            auth_headers["Authorization"] = f"Bearer {access_token}"
             
-        return final_headers
+        return auth_headers

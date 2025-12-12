@@ -7,11 +7,17 @@ from app.mcp.registry import MCPRegistry
 log = logging.getLogger(__name__)
 
 
-def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str], parameters: List[Dict[str, Any]], body_schema: Dict[str, Any], security_schemes: List[Dict[str, Any]], **kwargs):
+def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
     """
     生成实际的可调用函数：将 kwargs 映射到 path / query / body
     添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
     """
+    method = tool_metadata["method"]
+    url_template = tool_metadata["url_template"]
+    headers = tool_metadata["headers"]
+    parameters = tool_metadata["parameters"]
+    body_schema = tool_metadata["body_schema"]
+    security_schemes = tool_metadata["security_schemes"]
 
     # Validate all parameters including auth according to OpenAPI specification
     _validate_parameters(kwargs, parameters, body_schema, security_schemes)
@@ -23,7 +29,8 @@ def _make_rest_callable(method: str, url_template: str, headers: Dict[str, str],
     # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
     if "auth" in kwargs:
         auth_info = kwargs["auth"]
-        final_headers = AuthHandler.process_auth_headers(final_headers, auth_info)
+        auth_headers = AuthHandler.process_auth_headers(auth_info)  # Pass empty dict since we only need auth headers
+        final_headers.update(auth_headers)  # Merge auth headers with existing headers
         # Remove auth from kwargs so it's not passed as a parameter
         del kwargs["auth"]
     
@@ -257,8 +264,6 @@ def _validate_auth_against_security_scheme(auth_value: Any, security_scheme: Dic
     else:
         raise ValueError(f"Unsupported security scheme type: {scheme_type}")
 
-
-
 """
 ToolExecutor handles the actual execution of registered tools.
 This separates the execution logic from the registration/loading logic.
@@ -287,14 +292,7 @@ def execute_tool(registry : MCPRegistry, name: str, orgid: Optional[str] = None,
             identity["fileName"] = tool_metadata["fileName"]
             
         try:
-            result = _make_rest_callable(
-                tool_metadata["method"],
-                tool_metadata["url_template"],
-                tool_metadata["headers"],
-                tool_metadata["parameters"],
-                tool_metadata["body_schema"],
-                tool_metadata["security_schemes"], 
-                **kwargs)
+            result = _make_rest_callable(tool_metadata, **kwargs)
             return None, result, identity
         except Exception as e:
             return str(e), None, identity  

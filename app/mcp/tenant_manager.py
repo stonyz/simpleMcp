@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 
 from app.mcp.tool_executor import execute_tool
-from app.mcp.tool_registry import register_tools_from_openapi, unregister_tools_by_origin
+from app.mcp.tool_registry import parse_tools_from_openapi
 from app.mcp.registry import MCPRegistry
 
 class TenantManager:
@@ -34,21 +34,29 @@ class TenantManager:
         pass
 
     def register_tools_from_openapi(self, tenant: str, orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[str]:
+        # Get tools data from parsing the OpenAPI spec
+        tools_data = parse_tools_from_openapi(orgid, appid, openapi_data, fileId, fileName)
+        
+        # Register each tool with the tenant registry
         tenant_registry = self.get_tenant_registry(tenant)
-        return register_tools_from_openapi(tenant_registry, orgid, appid, openapi_data, fileId, fileName)
+        registered_names = []
+        for tool_data in tools_data:
+            tenant_registry.register_function(
+                tool_data["name"],
+                tool_data["metadata"],
+                tool_data["schema"],
+                tool_data["orgid"],
+                tool_data["appid"]
+            )
+            registered_names.append(tool_data["name"])
+        
+        return registered_names
 
     def unregister_tools_by_origin(self, tenant: str, orgid: str, appid: str, names: List[str]):  
         tenant_registry = self.get_tenant_registry(tenant)
-        unregister_tools_by_origin(tenant_registry, orgid, appid, names)  
+        tenant_registry.unregister_by_origin(orgid, appid, names)
 
-    def register_function(self, name: str, metadata: Dict[str, Any], schema: dict, 
-                         orgid: str, appid: str, tenant: Optional[str] = None):
-        """
-        Register a function with tenant-specific registry.
-        """
-        tenant_registry = self.get_tenant_registry(tenant)
-        return tenant_registry.register_function(name, metadata, schema, orgid, appid)
-    
+
     def list_functions(self, tenant: Optional[str] = None, orgid: Optional[str] = None, 
                       appid: Optional[str] = None, name: Optional[str] = None) -> List[dict]:
         """

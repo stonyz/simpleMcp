@@ -2,9 +2,6 @@ import logging
 import copy
 import os
 from typing import Dict, Any, List, Tuple, Optional
-from urllib.parse import urljoin
-
-from app.mcp.registry import MCPRegistry
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -329,15 +326,16 @@ ToolRegistry handles the registration and loading of tools from various sources.
 This separates the registration/loading logic from the execution logic.
 """
 
-def register_tools_from_openapi(registry: MCPRegistry, orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[str]:
+def parse_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[Dict[str, Any]]:
     """
-    从 OpenAPI 文档批量注册 tools。返回已注册的 tool 名称列表。
+    从 OpenAPI 文档解析工具信息。返回工具注册所需的数据列表。
+    每个元素包含工具元数据和 schema 信息。
     """
     base_url = _choose_server(openapi_data)
     paths = openapi_data.get("paths") or {}
     headers = _build_headers(openapi_data, orgid, appid)
 
-    registered: List[str] = []
+    tools_data: List[Dict[str, Any]] = []
 
     for path, methods in paths.items():
         if not isinstance(methods, dict):
@@ -380,14 +378,13 @@ def register_tools_from_openapi(registry: MCPRegistry, orgid: str, appid: str, o
                 "output_schema": response_schema
             }
 
-            registry.register_function(name, tool_metadata, schema, orgid, appid)
-            registered.append(name)
-            log.info(f"Registered tool: {name} ({method.upper()} {path}) for org={orgid} app={appid}")
+            tools_data.append({
+                "name": name,
+                "metadata": tool_metadata,
+                "schema": schema,
+                "orgid": orgid,
+                "appid": appid
+            })
+            log.info(f"Parsed tool: {name} ({method.upper()} {path}) for org={orgid} app={appid}")
 
-    return registered
-
-def unregister_tools_by_origin(registry: MCPRegistry, orgid: str, appid: str, names: List[str]):
-    """
-    根据来源取消注册工具
-    """
-    registry.unregister_by_origin(orgid, appid, names)
+    return tools_data
