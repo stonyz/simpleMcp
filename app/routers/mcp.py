@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 from app.mcp.tenant_manager import tenant_manager
 # from app.mcp.registry import registry
 from app.config import settings
-# 导入request_id_context以获取request_id
+# Import the request_id_context from RequestIdMiddleware
 from app.midware.RequestIdMiddleware import request_id_context
 import json
 import logging
@@ -45,6 +45,10 @@ async def mcp_call(
     """
     try:
         errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name=function_name, orgid=orgid, appid=appid, **parameters)
+        
+        # 获取request_id并添加到meta中
+        meta["x-request-id"] = request_id_context.get("")
+        
         if errorMessage:
             return {"status": "error", "error": errorMessage, "meta": meta}
         return {"status": "success", "result": result, "meta": meta}
@@ -140,11 +144,7 @@ async def mcp_jsonrpc(
                 errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name = name, orgid=call_orgid, appid=call_appid, **arguments)
                 
                 # 获取request_id并添加到meta中
-                request_id = request_id_context.get("")
-                if request_id:
-                    if meta is None:
-                        meta = {}
-                    meta["x-request-id"] = request_id
+                meta["x-request-id"] = request_id_context.get("")
                 
                 if errorMessage:
                     return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": errorMessage, "data": {"meta": meta}}}

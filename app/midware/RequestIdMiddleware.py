@@ -5,9 +5,8 @@ import uuid
 import logging
 import contextvars
 
-# Create a context variable to store the request ID
+# Create a shared context variable to store the request ID
 request_id_context: contextvars.ContextVar[str] = contextvars.ContextVar('request_id')
-
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -31,17 +30,3 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         finally:
             # Reset the context variable to its previous state
             request_id_context.reset(token)
-
-
-# Custom formatter that includes the request ID
-class RequestIdFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        # Get the request ID from the context variable
-        # Using default value of "N/A" when context is not set
-        request_id = request_id_context.get("")
-        
-        # Add the request ID to the log record
-        record.request_id = request_id
-        
-        # Format the log message with the request ID
-        return super().format(record)

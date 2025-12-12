@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 from app.config import settings
+import contextvars
 
 # ========= 配置 =========
 LOG_LEVEL = settings.log_level.upper()
@@ -24,16 +25,25 @@ DATE_FMT = "%Y-%m-%d"
 # 默认保留最近 N 天（归档清理），不需要可设为 0
 BACKUP_DAYS = getattr(settings, "log_backup_days", 7)
 
-# Import the RequestIdFormatter from the new middleware
-try:
-    from app.midware.RequestIdMiddleware import RequestIdFormatter
-    # Custom log format that includes the request ID
-    LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(request_id)s]: %(message)s"
-    formatter = RequestIdFormatter(LOG_FORMAT)
-except ImportError:
-    # Fallback to the original format if the middleware is not available
-    LOG_FORMAT = "%(asctime)s [%(levelname)s]: %(message)s"
-    formatter = logging.Formatter(LOG_FORMAT)
+# Import the request_id_context from RequestIdMiddleware
+from app.midware.RequestIdMiddleware import request_id_context
+
+# Custom formatter that includes the request ID
+class RequestIdFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        # Get the request ID from the context variable
+        # Using default value of "" when context is not set
+        request_id = request_id_context.get("")
+        
+        # Add the request ID to the log record
+        record.request_id = request_id
+        
+        # Format the log message with the request ID
+        return super().format(record)
+
+# Import the RequestIdFormatter from this module now
+LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(request_id)s]: %(message)s"
+formatter = RequestIdFormatter(LOG_FORMAT)
 
 loggers = {}  # 缓存已创建的 logger
 

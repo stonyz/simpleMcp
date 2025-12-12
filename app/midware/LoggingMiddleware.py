@@ -46,6 +46,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         # 解析并记录响应体
         response_text = response_body.decode("utf-8") if response_body else ""
-        request_logger.info(f"{log_msg} {response.status_code}\nHeaders: {headers_dict}\nReqBody:{body_str}\nResp:{response_text}\n")
+        request_logger.info(f"{log_msg} {response.status_code}\nHeaders: {headers_dict}\nReq:     `{body_str}\nResp:    `{response_text}\n")
 
         return response
