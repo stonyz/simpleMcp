@@ -14,6 +14,17 @@
     # ---------- Stage 2: Build backend ----------
     FROM python:3.12-slim AS backend
     
+    # RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        vim-tiny \        # 这里装 vi（其实是 vim-tiny）
+        curl \
+        htop \
+    && rm -rf /var/lib/apt/lists/*
+
+    # 2. 把 vi 指向 vim.tiny（可选，保证输入 vi 就能用）
+    RUN ln -sf /usr/bin/vim.tiny /usr/bin/vi
+
     # 设置工作目录
     WORKDIR /app
     
