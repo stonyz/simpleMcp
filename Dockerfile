@@ -14,26 +14,28 @@
     # ---------- Stage 2: Build backend ----------
     FROM python:3.12-slim AS backend
     
+    # 环境变量（避免 pyc、强制 utf-8）
+    ENV PYTHONDONTWRITEBYTECODE=1 \
+        PYTHONUNBUFFERED=1 \
+        POETRY_VIRTUALENVS_CREATE=false \
+        POETRY_NO_INTERACTION=1 \
+        POETRY_NO_ANSI=1 \
+        DEBIAN_FRONTEND=noninteractive \
+        TERM=xterm
+        
+
     # RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
     RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         vim-tiny \
         curl \
         htop \
-    && rm -rf /var/lib/apt/lists/*
-
-    # 2. 把 vi 指向 vim.tiny（可选，保证输入 vi 就能用）
-    RUN ln -sf /usr/bin/vim.tiny /usr/bin/vi
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/vim.tiny /usr/bin/vi
 
     # 设置工作目录
     WORKDIR /app
     
-    # 环境变量（避免 pyc、强制 utf-8）
-    ENV PYTHONDONTWRITEBYTECODE=1 \
-        PYTHONUNBUFFERED=1 \
-        POETRY_VIRTUALENVS_CREATE=false \
-        POETRY_NO_INTERACTION=1 \
-        POETRY_NO_ANSI=1
     # 安装 Poetry
     RUN pip install --no-cache-dir --progress-bar off  poetry
 
@@ -57,5 +59,5 @@
     EXPOSE 8000
     
     # 使用 uvicorn 作为启动命令
-    CMD ["poetry", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     
