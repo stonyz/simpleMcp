@@ -4,6 +4,8 @@ from typing import Dict, Any, Optional
 from app.mcp.tenant_manager import tenant_manager
 # from app.mcp.registry import registry
 from app.config import settings
+# 导入request_id_context以获取request_id
+from app.midware.RequestIdMiddleware import request_id_context
 import json
 import logging
 log = logging.getLogger(__name__)
@@ -62,7 +64,7 @@ async def mcp_jsonrpc(
     - 支持通过 HTTP Headers 传递 orgid/appid: X-Org-ID, X-App-ID
     返回严格的 JSON-RPC 2.0 格式。
     """
-    request_logger.info(f"Received request: {request.method} {request.url}")
+    log.info(f"Received request: {request.method} {request.url}")
     try:
         body = await request.json()
     except Exception:
@@ -136,6 +138,14 @@ async def mcp_jsonrpc(
             
             try:
                 errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name = name, orgid=call_orgid, appid=call_appid, **arguments)
+                
+                # 获取request_id并添加到meta中
+                request_id = request_id_context.get("")
+                if request_id:
+                    if meta is None:
+                        meta = {}
+                    meta["x-request-id"] = request_id
+                
                 if errorMessage:
                     return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": errorMessage, "data": {"meta": meta}}}
             except Exception as e:
