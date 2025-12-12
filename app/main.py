@@ -75,7 +75,7 @@ async def on_startup():
                 data = yaml.safe_load(f.openapi_yaml)
          
                 tenant = getattr(f, 'tenant', 'default')
-                names = tenant_manager.register_tools_from_openapi(tenant, f.orgid, f.appid, data, f.fileId, f.fileName)
+                names = tenant_manager.register_tools_from_openapi(tenant, f.orgid, f.appid, data, f.fileId, f.fileName, f.auth)
                 total_funcs += len(names)
             except Exception as e:
                 log.exception(f"Failed to register OpenAPI (org={f.orgid}, app={f.appid}, title={f.title}): {e}")

@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from app.mcp.rest.executor import execute_rest_call
 from app.mcp.rest.auth_handler import AuthHandler
+import json
 
 log = logging.getLogger(__name__)
 
@@ -17,20 +18,28 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
     parameters = tool_metadata["parameters"]
     body_schema = tool_metadata["body_schema"]
     security_schemes = tool_metadata["security_schemes"]
+    
 
+    if "auth" not in kwargs:
+        # If user didn't provide auth but tool has stored auth, use that as fallback
+        stored_auth = tool_metadata.get("auth")
+        if stored_auth is not None:
+            try:
+                # Parse the stored auth JSON string
+                kwargs["auth"] = json.loads(stored_auth)
+            except json.JSONDecodeError:
+                log.warning(f"Failed to parse stored auth for tool {tool_metadata.get('tool_name', 'unknown')}")
+        
     # Validate all parameters including auth according to OpenAPI specification
     _validate_parameters(kwargs, parameters, body_schema, security_schemes)
     
     # Create a copy of headers to avoid modifying the original
     final_headers = headers.copy()
     
-    # Check if auth information is provided in arguments
-    # For basic auth: {"auth": {"username": "admin", "password": "secret"}}
+    # Process auth headers if we have auth data
     if "auth" in kwargs:
-        auth_info = kwargs["auth"]
-        auth_headers = AuthHandler.process_auth_headers(auth_info)  # Pass empty dict since we only need auth headers
+        auth_headers = AuthHandler.process_auth_headers(kwargs["auth"])
         final_headers.update(auth_headers)  # Merge auth headers with existing headers
-        # Remove auth from kwargs so it's not passed as a parameter
         del kwargs["auth"]
     
     # path 替换

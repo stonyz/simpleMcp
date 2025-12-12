@@ -11,7 +11,7 @@ import logging
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: str, fileName: str, openapi_data: dict):
+async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: str, fileName: str, openapi_data: dict, auth: Optional[str] = None):
     """
     公共的 OpenAPI 注册逻辑
     """
@@ -21,9 +21,9 @@ async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: str, 
 
     # 使用现有的数据库操作方式
     with get_db_context() as db:
-        obj, updated = crud.upsert_openapi_file(db, tenant, org, app, fileId, fileName, openapi_data)
+        obj, updated = crud.upsert_openapi_file(db, tenant, org, app, fileId, fileName, openapi_data, auth)
 
-    registered = tenant_manager.register_tools_from_openapi(tenant, org, app, openapi_data, fileId, fileName)
+    registered = tenant_manager.register_tools_from_openapi(tenant, org, app, openapi_data, fileId, fileName, auth)
     return {
         "status": "success",
         "updated": updated,
@@ -43,6 +43,7 @@ async def register_openapi(
     app: str = Form(...),
     fileId: str = Form(...),
     fileName: str = Form(...),
+    auth: Optional[str] = Form(None),
     file: Optional[UploadFile] = None,
     yaml_content: Optional[str] = Form(None)
 ):
@@ -54,7 +55,7 @@ async def register_openapi(
     else:
         raise HTTPException(status_code=400, detail="No file or YAML string provided")
 
-    return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data)
+    return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data, auth)
 
 @router.post("/register")
 async def register_openapi_json(
@@ -70,6 +71,7 @@ async def register_openapi_json(
     fileId = request_data.get("fileId")
     fileName = request_data.get("fileName")
     yaml_content = request_data.get("yaml_content")
+    auth = request_data.get("auth")  # Extract auth from request data
     
     # 参数验证
     if not all([org, app, fileId, fileName]):
@@ -79,7 +81,7 @@ async def register_openapi_json(
         raise HTTPException(status_code=400, detail="yaml_content is required")
 
     openapi_data = parse_yaml_string(yaml_content)
-    return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data)
+    return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data, auth)
 
 def parse_file_content(filename: str, content: bytes):
     """根据文件后缀解析内容"""

@@ -5,7 +5,7 @@ import json
 import yaml
 from typing import List, Optional, Tuple
 # FIXME save tenant to database
-def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId: str, fileName: str, openapi_data: dict):
+def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId: str, fileName: str, openapi_data: dict, auth: Optional[str] = None):
     info = openapi_data.get("info", {})
     title = info.get("title", "untitled")
     version = info.get("version") or ""
@@ -19,6 +19,9 @@ def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId
     existed = db.execute(stmt).scalars().first()
     if existed:
         existed.openapi_yaml = yaml.dump(openapi_data, allow_unicode=True)
+        # Update auth if provided
+        if auth is not None:
+            existed.auth = auth
         db.add(existed)
         db.commit()
         db.refresh(existed)
@@ -34,6 +37,7 @@ def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId
         version=version,
         create_at= func.now(),
         openapi_yaml = yaml.dump(openapi_data, allow_unicode=True),
+        auth=auth,  # Store auth data if provided
     )
     db.add(obj)
     db.commit()

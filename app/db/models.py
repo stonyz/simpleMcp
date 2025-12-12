@@ -13,6 +13,8 @@ class OpenAPIFile(Base):
     title = Column(String(256), nullable=False)
     version = Column(String(64), nullable=True)
     openapi_yaml = Column(Text, nullable=False)
+    # Add auth column to store optional auth data
+    auth = Column(Text, nullable=True)
     create_at = Column(DATETIME, nullable=False)
     update_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
 

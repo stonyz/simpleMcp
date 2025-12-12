@@ -33,7 +33,7 @@ class TenantManager:
 
         pass
 
-    def register_tools_from_openapi(self, tenant: str, orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None) -> List[str]:
+    def register_tools_from_openapi(self, tenant: str, orgid: str, appid: str, openapi_data: Dict[str, Any], fileId: str = None, fileName: str = None, auth: Optional[str] = None) -> List[str]:
         # Get tools data from parsing the OpenAPI spec
         tools_data = parse_tools_from_openapi(orgid, appid, openapi_data, fileId, fileName)
         
@@ -41,6 +41,10 @@ class TenantManager:
         tenant_registry = self.get_tenant_registry(tenant)
         registered_names = []
         for tool_data in tools_data:
+            # Add auth data to tool metadata if provided
+            if auth is not None:
+                tool_data["metadata"]["auth"] = auth
+                
             tenant_registry.register_function(
                 tool_data["name"],
                 tool_data["metadata"],
