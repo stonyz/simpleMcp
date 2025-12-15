@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     # 授权Tokens列表
     AUTH_TOKENS: List[str] = Field(default_factory=list, description="List of valid authorization tokens")
 
-    # 服务
+    # 代理配置
+    PROXY_URL: Optional[str] = Field(None, description="Proxy URL for outgoing requests")
+    PROXY_RULES: Optional[str] = Field(None, description="Comma-separated list of URL patterns that require proxy")
+
+    # 应用配置
     APP_NAME: str = "Dynamic MCP Server"
     DEBUG: bool = False
     log_level: str = "DEBUG"
