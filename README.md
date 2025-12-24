@@ -485,6 +485,46 @@ Configure the following environment variables in your `.env` file:
 
 ## Development
 
+### Development Environment Setup
+
+To set up the development environment, follow these steps:
+
+1. **Install Python using pyenv** (if not already installed):
+   ```bash
+   # Install pyenv (macOS via Homebrew)
+   brew install pyenv
+   
+   # Or install pyenv (Linux)
+   curl https://pyenv.run | bash
+   
+   # Add to your shell profile (.bashrc, .zshrc, etc.)
+   export PYENV_ROOT="$HOME/.pyenv"
+   export PATH="$PYENV_ROOT/bin:$PATH"
+   eval "$(pyenv init -)"
+   ```
+
+2. **Install the required Python version** (check pyproject.toml for the specific version, typically 3.8+):
+   ```bash
+   pyenv install 3.12.6  # or whatever version is specified in pyproject.toml
+   pyenv local 3.12.6   # or pyenv local 3.8.10 for project-specific version
+   ```
+
+3. **Install Poetry** (if not already installed):
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+4. **Navigate to the project directory** and execute the following commands:
+   ```bash
+   cd /path/to/mcp-server
+   poetry env use python  # Command 10022: Use the current Python version
+   poetry config virtualenvs.in-project true  # Command 10023: Create virtual environment in project directory
+   poetry install  # Command 10024: Install all dependencies from pyproject.toml
+   poetry env info  # Command 10025: Verify the environment information
+   poetry env remove python  # Command 10026: Remove the virtual environment if needed
+   poetry env info  # Command 10027: Verify the environment after removal/modification
+   ```
+
 ### Project Structure
 
 ```
