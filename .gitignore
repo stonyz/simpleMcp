@@ -43,7 +43,7 @@ env.bak/
 venv.bak/
 
 # Pyenv
-.python-version
+#.python-version
 
 # VS Code
 .vscode/
