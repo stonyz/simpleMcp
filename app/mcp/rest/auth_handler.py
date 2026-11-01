@@ -3,6 +3,7 @@ import base64
 import time
 import logging
 from typing import Dict, Any, List
+from app.mcp.errors import http_error, request_error
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +40,8 @@ class AuthHandler:
         
         try:
             response = requests.post(token_url, data=data)
-            response.raise_for_status()
+            if 400 <= response.status_code < 600:
+                raise http_error(response, include_body=False)
             token_data = response.json()
             
             access_token = token_data["access_token"]
@@ -52,9 +54,8 @@ class AuthHandler:
             }
             
             return access_token
-        except Exception as e:
-            log.error(f"Failed to get OAuth2 token: {e}")
-            raise
+        except requests.RequestException as exc:
+            raise request_error(exc) from exc
     
     @staticmethod
     def process_auth_headers(auth_info: Dict[str, Any]) -> Dict[str, str]:

@@ -1,4 +1,5 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+from app.mcp.errors import ToolExecutionError
 
 from app.mcp.tool_executor import execute_tool
 from app.mcp.tool_registry import parse_tools_from_openapi
@@ -70,9 +71,9 @@ class TenantManager:
         return tenant_registry.list_functions(orgid=orgid, appid=appid, name=name)
     
     def execute_tool(self, tenant: str, name: str, orgid: Optional[str] = None, 
-                    appid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+                    appid: Optional[str] = None, **kwargs) -> Tuple[Optional[ToolExecutionError], Any, Dict[str, Any]]:
         """
-        Execute a tool. Tenant parameter is accepted but not used in current implementation.
+        Execute a tenant's tool, preserving execution errors and identity metadata.
         """
         tenant_registry = self.get_tenant_registry(tenant)
         tool_metadata = tenant_registry.get_tool_metadata(name, orgid=orgid, appid=appid)
@@ -86,8 +87,8 @@ class TenantManager:
             if field in tool_metadata and tool_metadata[field] is not None
         }
         
-        result, response = execute_tool(tool_metadata, **kwargs)
-        return result, response, identity
+        error, response = execute_tool(tool_metadata, **kwargs)
+        return error, response, identity
 
 # Global instance
 tenant_manager = TenantManager()

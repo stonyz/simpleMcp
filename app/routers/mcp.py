@@ -50,7 +50,8 @@ async def mcp_call(
         meta["x-request-id"] = request_id_context.get("")
         
         if errorMessage:
-            return {"status": "error", "error": errorMessage, "meta": meta}
+            return {"status": "error", "error": str(errorMessage),
+                    "error_details": errorMessage.details, "meta": meta}
         return {"status": "success", "result": result, "meta": meta}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -78,21 +79,31 @@ async def mcp_jsonrpc(
             "error": {"code": -32700, "message": "Parse error"}
         })
 
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={
+            "jsonrpc": "2.0", "id": None,
+            "error": {"code": -32600, "message": "Invalid Request"}
+        })
+
     jsonrpc = body.get("jsonrpc")
     method = body.get("method")
     rpc_id = body.get("id")
-    params = body.get("params") or {}
+    params = body.get("params", {})
     
     # 从 HTTP Headers 或 params 获取 orgid/appid
     header_orgid = request.headers.get("X-Org-ID")
     header_appid = request.headers.get("X-App-ID")
 
-    if jsonrpc != "2.0" or method is None:
+    if jsonrpc != "2.0" or not isinstance(method, str):
         return JSONResponse(status_code=400, content={
             "jsonrpc": "2.0",
             "id": rpc_id,
             "error": {"code": -32600, "message": "Invalid Request"}
         })
+
+    if not isinstance(params, dict):
+        return {"jsonrpc": "2.0", "id": rpc_id,
+                "error": {"code": -32602, "message": "params must be an object"}}
 
     try:
         if method == "initialize":
@@ -131,10 +142,13 @@ async def mcp_jsonrpc(
             return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": tools}}
 
         if method in ("tools/call", "call_tool"):
-            name = params.get("name") or params.get("function_name")
-            if not name:
+            name = params.get("name", params.get("function_name"))
+            if not isinstance(name, str) or not name:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": "Missing 'name' or 'function_name'"}}
-            arguments = params.get("arguments") or params.get("parameters") or {}
+            arguments = params.get("arguments", params.get("parameters", {}))
+            if not isinstance(arguments, dict):
+                return {"jsonrpc": "2.0", "id": rpc_id,
+                        "error": {"code": -32602, "message": "arguments must be an object"}}
             
             # 优先使用 params 中的值，其次使用 headers
             call_orgid = params.get("orgid") or header_orgid
@@ -147,7 +161,12 @@ async def mcp_jsonrpc(
                 meta["x-request-id"] = request_id_context.get("")
                 
                 if errorMessage:
-                    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": errorMessage, "data": {"meta": meta}}}
+                    return {"jsonrpc": "2.0", "id": rpc_id, "result": {
+                        "isError": True,
+                        "content": [{"type": "text", "text": str(errorMessage)}],
+                        "_meta": {"error_details": errorMessage.details},
+                        "meta": meta,
+                    }}
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 

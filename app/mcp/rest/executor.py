@@ -3,6 +3,7 @@ import logging
 import fnmatch
 from typing import Dict, Any
 from app.config import settings
+from app.mcp.errors import http_error, request_error
 
 log = logging.getLogger(__name__)
 
@@ -46,10 +47,14 @@ def execute_rest_call(method: str, url: str, headers: Dict[str, str], query: Dic
         }
         log.debug(f"Using proxy {settings.PROXY_URL} for URL: {url}")
     
-    resp = requests.request(**request_params)
+    try:
+        resp = requests.request(**request_params)
+    except requests.RequestException as exc:
+        raise request_error(exc) from exc
     elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
     log.debug(f"Get response from api: {method} {url} with status {resp.status_code} in {elapsed_time:.2f} ms")
-    resp.raise_for_status()
+    if 400 <= resp.status_code < 600:
+        raise http_error(resp)
     # 自动判定 json / text
     ctype = resp.headers.get("Content-Type", "")
     if "application/json" in ctype:

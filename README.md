@@ -118,6 +118,60 @@ MCP Server supports multiple authentication mechanisms for both client access to
   - `tools/list` or `list_tools` - List available tools
   - `tools/call` or `call_tool` - Call a tool
 
+### Tool execution errors
+
+When an upstream API returns HTTP 4xx/5xx, the gateway preserves its failure
+reason and status code. For example, a 502 body
+`{"error":"手表不在线，无法获取位置信息"}` produces:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": true,
+    "content": [
+      {"type": "text", "text": "上游接口返回 HTTP 502：手表不在线，无法获取位置信息"}
+    ],
+    "_meta": {
+      "error_details": {
+        "type": "upstream_http_error",
+        "status_code": 502,
+        "body": {"error": "手表不在线，无法获取位置信息"}
+      }
+    },
+    "meta": {"x-request-id": "..."}
+  }
+}
+```
+
+**Client migration:** `tools/call` and `call_tool` now report API failures,
+network failures and tool argument validation failures as HTTP 200 with
+`result.isError: true`, replacing the previous top-level JSON-RPC `error`.
+Read `result.content` for the failure reason and `_meta.error_details` for
+structured details. Unknown/inaccessible tools and malformed requests still
+return top-level protocol errors. Success response shapes remain unchanged.
+Existing tool identity fields and `x-request-id` remain in `meta`.
+
+The legacy `POST /mcp/call` endpoint continues to return `status: "error"`,
+a string `error`, and `meta`; it adds `error_details` with the same structured
+details. Its existing HTTP status behavior is unchanged.
+
+Error types include `upstream_http_error`, `upstream_timeout`,
+`upstream_connection_error`, `upstream_request_error`, `validation_error`, and
+`tool_execution_error`. Network failures have no upstream HTTP status code.
+Unexpected execution exceptions return a generic message; the server logs the
+traceback for investigation using the request ID.
+
+JSON error messages prefer string `error`, `message`, then `detail` fields.
+Invalid JSON and plain text use a text fallback; empty and HTML responses use
+an HTTP status description. Error bodies are limited to 4096 characters;
+oversized bodies become truncated text with `truncated: true`. Common credential
+fields and text assignments are redacted, but arbitrary sensitive free text
+cannot be comprehensively identified. OAuth token errors expose the message
+and status without the full response body. Request URLs and headers are not
+included in these error details. No OpenAPI changes are needed.
+
 ## Authentication
 
 ### Server Access Authentication

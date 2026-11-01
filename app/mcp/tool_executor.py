@@ -1,8 +1,12 @@
 import logging
-from typing import Dict, Any, Optional, List
+import json
+from typing import Dict, Any, Optional, List, Tuple
+
+import requests
+
 from app.mcp.rest.executor import execute_rest_call
 from app.mcp.rest.auth_handler import AuthHandler
-import json
+from app.mcp.errors import ToolExecutionError, redact, MAX_ERROR_BODY, request_error
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +34,10 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
                 log.warning(f"Failed to parse stored auth for tool {tool_metadata.get('tool_name', 'unknown')}")
         
     # Validate all parameters including auth according to OpenAPI specification
-    _validate_parameters(kwargs, parameters, body_schema, security_schemes)
+    try:
+        _validate_parameters(kwargs, parameters, body_schema, security_schemes)
+    except ValueError as exc:
+        raise ToolExecutionError(redact(str(exc))[:MAX_ERROR_BODY], {"type": "validation_error"}) from exc
     
     # Create a copy of headers to avoid modifying the original
     headers = {}
@@ -276,13 +283,18 @@ def _validate_auth_against_security_scheme(auth_value: Any, security_scheme: Dic
 ToolExecutor handles the actual execution of registered tools.
 This separates the execution logic from the registration/loading logic.
 """
-def execute_tool(tool_metadata, **kwargs) -> Dict[str, Any]:    
+def execute_tool(tool_metadata, **kwargs) -> Tuple[Optional[ToolExecutionError], Any]:
     # Based on the tool type, create and execute the appropriate function
     if tool_metadata["type"] == "rest_api":         
         try:
             result = _make_rest_callable(tool_metadata, **kwargs)
             return None, result
-        except Exception as e:
-            return str(e), None  
+        except ToolExecutionError as exc:
+            return exc, None
+        except requests.RequestException as exc:
+            return request_error(exc), None
+        except Exception:
+            log.exception("Unexpected error executing tool %s", tool_metadata.get("tool_name", "unknown"))
+            return ToolExecutionError("工具执行失败，请通过请求 ID 联系管理员排查", {"type": "tool_execution_error"}), None
     else:
         raise ValueError(f"Unsupported tool type: {tool_metadata['type']}")
