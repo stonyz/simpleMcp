@@ -58,6 +58,9 @@ venv.bak/
 # Database
 *.sqlite3
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Uvicorn / FastAPI
 *.pid

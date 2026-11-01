@@ -50,7 +50,7 @@
     COPY app/ ./app/
     
     # 复制日志目录（实际会在运行时挂载）
-    RUN mkdir -p logs
+    RUN mkdir -p logs data
     
     # 如果前端构建成功，把静态文件复制到 app/static
     #COPY --from=frontend-builder /web/build ./app/static
@@ -60,4 +60,3 @@
     
     # 使用 uvicorn 作为启动命令
     CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    

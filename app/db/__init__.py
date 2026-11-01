@@ -1,19 +1,24 @@
+from pathlib import Path
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker, declarative_base
 from contextlib import contextmanager
 from app.config import settings
 
-DATABASE_URL = (
-    f"mysql+pymysql://{settings.MYSQL_USER}:{settings.MYSQL_PASSWORD}"
-    f"@{settings.MYSQL_HOST}:{settings.MYSQL_PORT}/{settings.MYSQL_DB}?charset=utf8mb4"
-)
+DATABASE_URL = settings.DATABASE_URL
+database_url = make_url(DATABASE_URL)
+if database_url.get_backend_name() != "sqlite":
+    raise ValueError("DATABASE_URL must use SQLite (sqlite:///path/to/database.db)")
+
+in_memory = database_url.database in (None, "", ":memory:")
+if not in_memory:
+    Path(database_url.database).parent.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-    pool_size=10,
-    max_overflow=20,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    **({"poolclass": StaticPool} if in_memory else {}),
     future=True,
 )
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)

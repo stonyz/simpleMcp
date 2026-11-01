@@ -27,25 +27,27 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 
 ### Prerequisites
 
-- Python 3.8+
-- MySQL database
+- Python 3.12+
+- Poetry (for dependency management)
+- SQLite (included with Python; no database server required)
 - Docker (optional, for containerized deployment)
 
 ### Installation
 
 1. Clone the repository
-2. Install dependencies:
+2. Create the project environment and install the locked dependencies:
    ```bash
-   pip install -r requirements.txt
-   ```
-   or using Poetry:
-   ```bash
+   python3.12 -m venv .venv
+   poetry env use .venv/bin/python
    poetry install
    ```
+   Declare dependencies in `pyproject.toml` and commit `poetry.lock` to keep
+   installations reproducible. Use `poetry add <package>` or
+   `poetry remove <package>` to update both files.
 3. Set up environment variables in `.env` file (see `.env.example`)
 4. Run the server:
    ```bash
-   python -m app.main
+   poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
 
 ### Quick Example
@@ -475,13 +477,23 @@ When access permissions are denied, detailed error information is returned:
 
 Configure the following environment variables in your `.env` file:
 
-- `MYSQL_HOST`: MySQL host
-- `MYSQL_PORT`: MySQL port
-- `MYSQL_USER`: MySQL user
-- `MYSQL_PASSWORD`: MySQL password
-- `MYSQL_DB`: MySQL database
+- `DATABASE_URL`: SQLite URL, defaults to `sqlite:///./data/mcp.db`.
+  Relative paths are resolved from the server's working directory; parent directories
+  and tables are created automatically. For an absolute path, use
+  `sqlite:////absolute/path/mcp.db`.
 - `API_TOKEN`: Default Bearer token for upstream APIs
 - `AUTH_TOKENS`: Comma-separated list of valid authorization tokens
+
+Docker Compose mounts `./data` at `/app/data` to preserve the database across
+container recreation. Back up this directory while the server is stopped.
+Existing `MYSQL_*` settings are ignored. Existing MySQL data is not imported
+automatically; a new SQLite database starts empty.
+
+Run the database regression tests with:
+
+```bash
+poetry run python -m unittest discover -s tests -v
+```
 
 ## Development
 
@@ -503,10 +515,10 @@ To set up the development environment, follow these steps:
    eval "$(pyenv init -)"
    ```
 
-2. **Install the required Python version** (check pyproject.toml for the specific version, typically 3.8+):
+2. **Install the required Python version** (Python 3.12+; see pyproject.toml):
    ```bash
    pyenv install 3.12.6  # or whatever version is specified in pyproject.toml
-   pyenv local 3.12.6   # or pyenv local 3.8.10 for project-specific version
+   pyenv local 3.12.6
    ```
 
 3. **Install Poetry** (if not already installed):
@@ -517,12 +529,10 @@ To set up the development environment, follow these steps:
 4. **Navigate to the project directory** and execute the following commands:
    ```bash
    cd /path/to/mcp-server
-   poetry env use python  # Command 10022: Use the current Python version
-   poetry config virtualenvs.in-project true  # Command 10023: Create virtual environment in project directory
-   poetry install  # Command 10024: Install all dependencies from pyproject.toml
-   poetry env info  # Command 10025: Verify the environment information
-   poetry env remove python  # Command 10026: Remove the virtual environment if needed
-   poetry env info  # Command 10027: Verify the environment after removal/modification
+   python3.12 -m venv .venv
+   poetry env use .venv/bin/python
+   poetry install
+   poetry env info
    ```
 
 ### Project Structure
@@ -553,7 +563,7 @@ app/
 
 Run tests with:
 ```bash
-python -m pytest
+poetry run python -m unittest discover -s tests -v
 ```
 
 ### Contributing

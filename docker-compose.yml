@@ -10,5 +10,6 @@ services:
       - .env
     volumes:
       - ./logs:/app/logs   # 映射宿主机 logs 目录
+      - ./data:/app/data   # 持久化 SQLite 数据库
     restart: unless-stopped
 

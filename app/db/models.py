@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DATETIME, TIMESTAMP, UniqueConstraint, Index, func, text
+from sqlalchemy import Column, Integer, String, Text, DATETIME, TIMESTAMP, UniqueConstraint, Index, func
 from app.db import Base
 
 class OpenAPIFile(Base):
@@ -16,7 +16,7 @@ class OpenAPIFile(Base):
     # Add auth column to store optional auth data
     auth = Column(Text, nullable=True)
     create_at = Column(DATETIME, nullable=False)
-    update_at = Column(TIMESTAMP, nullable=False, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+    update_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
 
     __table_args__ = (
