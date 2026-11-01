@@ -1,15 +1,25 @@
-version: "3.7"
-
 services:
   mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: mcp-server:latest
     container_name: mcp-server
     ports:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # 固定在持久化目录中，避免使用宿主机 .env 中的本地路径。
+      DATABASE_URL: sqlite:////app/data/mcp.db
     volumes:
       - ./logs:/app/logs   # 映射宿主机 logs 目录
       - ./data:/app/data   # 持久化 SQLite 数据库
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 

@@ -41,6 +41,9 @@ ENV/
 env/
 env.bak/
 venv.bak/
+.env
+.env.*
+!.env.example
 
 # Pyenv
 #.python-version

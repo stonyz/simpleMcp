@@ -463,15 +463,31 @@ When access permissions are denied, detailed error information is returned:
 
 ### Docker Deployment
 
-1. Build the Docker image:
+The server needs Docker Engine and the Docker Compose plugin. Python and Poetry
+are installed inside the image, so they are not required on the host.
+
+1. In the project directory, create the configuration file on first deployment:
    ```bash
-   docker build -t mcp-server .
+   cp .env.example .env
+   ```
+   Edit `.env` and replace `AUTH_TOKENS` with your own tokens (a JSON array).
+   Configure `PROXY_URL` and `PROXY_RULES` only if an outbound proxy is needed.
+
+2. Build and start the service:
+   ```bash
+   docker compose up -d --build
+   ```
+   The API is available on port `8000`. Compose builds the image from this
+   directory and automatically restarts the service unless explicitly stopped.
+
+3. Check status and startup logs:
+   ```bash
+   docker compose ps
+   docker compose logs --tail=100 -f mcp-server
    ```
 
-2. Run with docker-compose:
-   ```bash
-   docker-compose up -d
-   ```
+After updating the source, run `docker compose up -d --build` again.
+The health check requests `/openapi.json` to confirm the application is serving.
 
 ### Environment Configuration
 
@@ -482,10 +498,13 @@ Configure the following environment variables in your `.env` file:
   and tables are created automatically. For an absolute path, use
   `sqlite:////absolute/path/mcp.db`.
 - `API_TOKEN`: Default Bearer token for upstream APIs
-- `AUTH_TOKENS`: Comma-separated list of valid authorization tokens
+- `AUTH_TOKENS`: JSON array of valid authorization tokens, e.g. `["your-token"]`
 
-Docker Compose mounts `./data` at `/app/data` to preserve the database across
-container recreation. Back up this directory while the server is stopped.
+Docker Compose fixes `DATABASE_URL` to `sqlite:////app/data/mcp.db`, overriding
+the value in `.env`, and mounts `./data` at `/app/data` to preserve the database
+across container recreation. Logs are stored in `./logs`. Both host directories
+are created on first startup. Back up `./data` while the server is stopped;
+`docker compose down` preserves these host directories.
 Existing `MYSQL_*` settings are ignored. Existing MySQL data is not imported
 automatically; a new SQLite database starts empty.
 
