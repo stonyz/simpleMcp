@@ -483,7 +483,7 @@ are installed inside the image, so they are not required on the host.
 3. Check status and startup logs:
    ```bash
    docker compose ps
-   docker compose logs --tail=100 -f mcp-server
+   docker compose logs --tail=100 -f simpleMcp
    ```
 
 After updating the source, run `docker compose up -d --build` again.

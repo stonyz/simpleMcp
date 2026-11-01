@@ -1,10 +1,12 @@
+name: simplemcp
+
 services:
-  mcp-server:
+  simpleMcp:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mcp-server:latest
-    container_name: mcp-server
+    image: simplemcp:latest
+    container_name: simpleMcp
     ports:
       - "8000:8000"
     env_file:
