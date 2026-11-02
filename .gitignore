@@ -75,3 +75,9 @@ web/node_modules/
 web/test-results/
 web/playwright-report/
 *.tsbuildinfo
+
+docs/temp/
+docs/superpowers/
+deploy.sh
+temp
+test.json
