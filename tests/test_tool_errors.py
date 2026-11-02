@@ -52,8 +52,8 @@ class ToolErrorTests(unittest.TestCase):
         result = payload["result"]
         self.assertTrue(result["isError"])
         self.assertEqual(result["content"][0]["type"], "text")
-        self.assertEqual(result["meta"]["tool_name"], "getWatchLocation")
-        self.assertEqual(result["meta"]["x-request-id"], response.headers["x-request-id"])
+        self.assertEqual(result["_meta"]["tool_name"], "getWatchLocation")
+        self.assertEqual(result["_meta"]["x-request-id"], response.headers["x-request-id"])
         details = result["_meta"]["error_details"]
         self.assertEqual(details["type"], error_type)
         if status is None:
@@ -220,6 +220,64 @@ class ToolErrorTests(unittest.TestCase):
                     "function_name": "getWatchLocation", "parameters": {}}).json()
                 self.assertEqual(legacy["status"], "success")
                 self.assertEqual(legacy["result"], expected)
+
+    def test_output_schema_success_returns_structured_location_for_both_aliases(self):
+        schema = {
+            "name": "getWatchLocation",
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "address": {"type": "string"},
+                    "away_from_home": {"type": "boolean"},
+                    "distance": {"type": "number"},
+                    "lat": {"type": "number"},
+                    "lng": {"type": "number"},
+                    "online": {"type": "boolean"},
+                    "update_time": {"type": "string"},
+                },
+                "required": ["address", "lat", "lng", "online"],
+            },
+        }
+        self.manager.get_tenant_registry("test").register_function(
+            "getWatchLocation", self.metadata, schema, "org", "app")
+        listing = self.client.post("/mcp?tenant=test", json={
+            "jsonrpc": "2.0", "id": 1, "method": "tools/list",
+        }).json()
+        self.assertEqual(listing["result"]["tools"][0]["outputSchema"], schema["output_schema"])
+        location = {
+            "address": "湖北省武汉市武昌区中华路街道湖北省武昌实验中学",
+            "away_from_home": True, "distance": 581.0,
+            "lat": 30.557124, "lng": 114.310497, "online": True,
+            "update_time": "2026-11-02 08:33:43",
+        }
+        for method in ("tools/call", "call_tool"):
+            with self.subTest(method=method), patch(
+                "app.mcp.rest.executor.httpx.AsyncClient.request",
+                return_value=self.upstream(json.dumps(location), 200),
+            ):
+                response = self.call(method=method)
+                result = response.json()["result"]
+                self.assertNotIn("isError", result)
+                self.assertEqual(result.get("structuredContent"), location)
+                self.assertEqual(json.loads(result["content"][0]["text"]), location)
+                self.assertEqual(result["_meta"]["x-request-id"], response.headers["x-request-id"])
+
+    def test_empty_json_object_is_structured_content(self):
+        with patch("app.mcp.rest.executor.httpx.AsyncClient.request",
+                   return_value=self.upstream("{}", 200)):
+            self.assertEqual(self.call().json()["result"].get("structuredContent"), {})
+
+    def test_non_object_success_keeps_text_content(self):
+        for body, content_type in (("ready", "text/plain"), ("[]", "application/json"),
+                                   ("null", "application/json"), ("true", "application/json"),
+                                   ("123", "application/json")):
+            with self.subTest(body=body), patch(
+                "app.mcp.rest.executor.httpx.AsyncClient.request",
+                return_value=self.upstream(body, 200, content_type),
+            ):
+                result = self.call().json()["result"]
+                self.assertEqual(result["content"][0]["text"], body)
+                self.assertNotIn("structuredContent", result)
 
 
 if __name__ == "__main__":

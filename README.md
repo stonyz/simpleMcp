@@ -169,8 +169,37 @@ MCP Server supports multiple authentication mechanisms for both client access to
 
 - `POST /mcp` - Standard MCP JSON-RPC 2.0 interface supporting:
   - `initialize` - Get server capabilities
+  - `ping` - Return an empty result
   - `tools/list` or `list_tools` - List available tools
   - `tools/call` or `call_tool` - Call a tool
+
+The stateless HTTP endpoint supports protocol versions `2025-06-18` and
+`2025-11-25`. Initialization requires `protocolVersion`, `capabilities`, and
+`clientInfo` (`name` and `version`). A supported version is echoed; other
+versions negotiate `2025-11-25`. Clients must disconnect if they do not
+support that version. Subsequent requests should carry `MCP-Protocol-Version`;
+unsupported header values return HTTP 400. Notifications (including
+`notifications/initialized`) receive HTTP 202 with an empty body. This
+stateless endpoint does not maintain cancellation state or a session ID.
+
+Successful JSON object results are returned in `structuredContent` and as
+serialized JSON in `content[].text`. When an OpenAPI response schema is not
+an object root (arrays, strings, numbers, nullable objects, or unions),
+`tools/list` advertises an object schema with a required `data` field, and
+`tools/call` returns `structuredContent: {"data": <upstream result>}` with
+the same JSON in the text block. Existing stored schemas are converted when
+read; re-registration is not required. Schema-less text results stay text.
+
+Outputs are validated before being returned as successful tool results.
+Schema mismatches produce `isError: true` with
+`_meta.error_details.type: "output_validation_error"`. OpenAPI `nullable`
+fields are converted to JSON Schema null unions, and OpenAPI 3.0 boolean
+exclusive bounds are converted to numeric bounds. Output validation supports
+JSON Schema 2020-12 (the default) and explicitly declared draft-07; other
+dialects produce `unsupported_schema_dialect` tool errors. Local schema
+references retain their targets when the output is wrapped. External schema references
+are not fetched during validation. The legacy `/mcp/call` endpoint retains
+its original unwrapped result format.
 
 ### Tool execution errors
 
@@ -188,13 +217,13 @@ reason and status code. For example, a 502 body
       {"type": "text", "text": "上游接口返回 HTTP 502：手表不在线，无法获取位置信息"}
     ],
     "_meta": {
+      "x-request-id": "...",
       "error_details": {
         "type": "upstream_http_error",
         "status_code": 502,
         "body": {"error": "手表不在线，无法获取位置信息"}
       }
-    },
-    "meta": {"x-request-id": "..."}
+    }
   }
 }
 ```
@@ -204,15 +233,16 @@ network failures and tool argument validation failures as HTTP 200 with
 `result.isError: true`, replacing the previous top-level JSON-RPC `error`.
 Read `result.content` for the failure reason and `_meta.error_details` for
 structured details. Unknown/inaccessible tools and malformed requests still
-return top-level protocol errors. Success response shapes remain unchanged.
-Existing tool identity fields and `x-request-id` remain in `meta`.
+return top-level protocol errors. Tool identity fields and `x-request-id`
+now use standard `result._meta` for both successful and failed JSON-RPC tool
+calls. Clients that read `result.meta` must migrate to `result._meta`.
 
 The legacy `POST /mcp/call` endpoint continues to return `status: "error"`,
 a string `error`, and `meta`; it adds `error_details` with the same structured
 details. Its existing HTTP status behavior is unchanged.
 
 Error types include `upstream_http_error`, `upstream_timeout`,
-`upstream_connection_error`, `upstream_request_error`, `validation_error`, and
+`upstream_connection_error`, `upstream_request_error`, `output_validation_error`, `validation_error`, and
 `tool_execution_error`. Network failures have no upstream HTTP status code.
 Unexpected execution exceptions return a generic message; the server logs the
 traceback for investigation using the request ID.
@@ -492,24 +522,25 @@ curl -X POST "http://localhost:8000/mcp" \
   }'
 ```
 
-#### 3. Via initialize (Setting default values)
+#### 3. Initialization
 
-Default organization and application IDs can be set during initialization:
+Initialization negotiates protocol capabilities. Organization and application
+IDs must be passed on each tool request via params or headers; this stateless
+endpoint does not save defaults from `clientInfo`.
 
 ```bash
-curl -X POST "http://localhost:8000/mcp" \
+curl -X POST "http://localhost:8000/mcp?tenant=your-tenant" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
     "params": {
-      "protocolVersion": "2024-11-05",
+      "protocolVersion": "2025-11-25",
+      "capabilities": {},
       "clientInfo": {
         "name": "MyMCPClient",
-        "version": "1.0.0",
-        "orgid": "cyberobject",
-        "appid": "qacheck"
+        "version": "1.0.0"
       }
     }
   }'
@@ -521,7 +552,6 @@ When parameters are passed via multiple methods simultaneously, the priority is 
 
 1. **Parameters in JSON-RPC params** (Highest priority)
 2. **Parameters in HTTP Headers**
-3. **Default values set during initialize** (Lowest priority)
 
 ### API Support for Isolation
 
@@ -564,7 +594,7 @@ When access permissions are denied, detailed error information is returned:
 
 1. **For new MCP clients**: It is recommended to pass `orgid`/`appid` via params
 2. **For existing standard MCP clients**: It is recommended to pass parameters via HTTP Headers
-3. **For simple scenarios**: Default values can be set during initialize
+3. **For simple scenarios**: Pass organization and application IDs on every request
 4. **For production environments**: It is recommended to always provide `orgid`/`appid` to ensure data isolation
 
 ## Deployment

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Body, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from typing import Dict, Any, Optional
 from app.mcp.tenant_manager import tenant_manager
 # from app.mcp.registry import registry
 from app.config import settings
+from app.mcp.errors import ToolExecutionError
+from app.mcp.output import output_contract, structured_output
 # Import the request_id_context from RequestIdMiddleware
 from app.midware.RequestIdMiddleware import request_id_context
 import json
@@ -11,6 +13,22 @@ import logging
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-11-25")
+
+
+def _rpc_error(rpc_id, code: int, message: str, status_code: int = 200):
+    content = {"jsonrpc": "2.0", "error": {"code": code, "message": message}}
+    if rpc_id is not None:
+        content["id"] = rpc_id
+    return JSONResponse(status_code=status_code, content=content)
+
+
+def _tool_error(rpc_id, error: ToolExecutionError, meta: dict):
+    return {"jsonrpc": "2.0", "id": rpc_id, "result": {
+        "isError": True,
+        "content": [{"type": "text", "text": str(error)}],
+        "_meta": {**meta, "error_details": error.details},
+    }}
 
 @router.get("/list")
 async def mcp_list(
@@ -73,33 +91,32 @@ async def mcp_jsonrpc(
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse(status_code=400, content={
-            "jsonrpc": "2.0",
-            "id": None,
-            "error": {"code": -32700, "message": "Parse error"}
-        })
+        return _rpc_error(None, -32700, "Parse error", 400)
 
     if not isinstance(body, dict):
-        return JSONResponse(status_code=400, content={
-            "jsonrpc": "2.0", "id": None,
-            "error": {"code": -32600, "message": "Invalid Request"}
-        })
+        return _rpc_error(None, -32600, "Invalid Request", 400)
 
     jsonrpc = body.get("jsonrpc")
     method = body.get("method")
     rpc_id = body.get("id")
     params = body.get("params", {})
+    valid_id = isinstance(rpc_id, str) or type(rpc_id) is int
     
     # 从 HTTP Headers 或 params 获取 orgid/appid
     header_orgid = request.headers.get("X-Org-ID")
     header_appid = request.headers.get("X-App-ID")
 
-    if jsonrpc != "2.0" or not isinstance(method, str):
-        return JSONResponse(status_code=400, content={
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "error": {"code": -32600, "message": "Invalid Request"}
-        })
+    if jsonrpc != "2.0" or not isinstance(method, str) or ("id" in body and not valid_id):
+        return _rpc_error(rpc_id if valid_id else None, -32600, "Invalid Request", 400)
+
+    protocol_header = request.headers.get("MCP-Protocol-Version")
+    if protocol_header is not None and protocol_header not in SUPPORTED_PROTOCOL_VERSIONS:
+        return _rpc_error(rpc_id if valid_id else None, -32600, "Unsupported MCP-Protocol-Version", 400)
+
+    # Notifications have no ID and must never produce a JSON-RPC response or
+    # accidentally execute a tool. This stateless server has no cancellation state.
+    if "id" not in body:
+        return Response(status_code=202 if isinstance(params, dict) else 400)
 
     if not isinstance(params, dict):
         return {"jsonrpc": "2.0", "id": rpc_id,
@@ -108,8 +125,16 @@ async def mcp_jsonrpc(
     try:
         if method == "initialize":
             client_protocol = params.get("protocolVersion")
+            client_info = params.get("clientInfo")
+            if (not isinstance(client_protocol, str) or not client_protocol
+                    or not isinstance(params.get("capabilities"), dict)
+                    or not isinstance(client_info, dict)
+                    or not isinstance(client_info.get("name"), str)
+                    or not isinstance(client_info.get("version"), str)):
+                return _rpc_error(rpc_id, -32602, "Invalid initialize parameters")
             result = {
-                "protocolVersion": client_protocol or "2024-11-05",
+                "protocolVersion": (client_protocol if client_protocol in SUPPORTED_PROTOCOL_VERSIONS
+                                    else SUPPORTED_PROTOCOL_VERSIONS[-1]),
                 "serverInfo": {
                     "name": settings.APP_NAME,
                     "version": getattr(settings, "APP_VERSION", "0.1.0")
@@ -119,6 +144,9 @@ async def mcp_jsonrpc(
                 }
             }
             return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
+
+        if method == "ping":
+            return {"jsonrpc": "2.0", "id": rpc_id, "result": {}}
 
         if method in ("tools/list", "list_tools"):
             # 优先使用 params 中的值，其次使用 headers
@@ -136,7 +164,7 @@ async def mcp_jsonrpc(
                 }
                 # 添加 outputSchema 如果存在
                 if s.get("output_schema"):
-                    tool["outputSchema"] = s["output_schema"]
+                    tool["outputSchema"], _ = output_contract(s["output_schema"])
                 tools.append(tool)
             
             return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": tools}}
@@ -161,23 +189,29 @@ async def mcp_jsonrpc(
                 meta["x-request-id"] = request_id_context.get("")
                 
                 if errorMessage:
-                    return {"jsonrpc": "2.0", "id": rpc_id, "result": {
-                        "isError": True,
-                        "content": [{"type": "text", "text": str(errorMessage)}],
-                        "_meta": {"error_details": errorMessage.details},
-                        "meta": meta,
-                    }}
+                    return _tool_error(rpc_id, errorMessage, meta)
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 
-            # 以 text 类型返回。如果结果非字符串，序列化为 JSON 文本
-            if isinstance(result, str):
-                text_payload = result
+            # Resolve the same schema advertised by tools/list for the executed tool.
+            schemas = tenant_manager.list_functions(
+                tenant=tenant, name=name, orgid=meta.get("orgid"), appid=meta.get("appid"))
+            schema = schemas[0].get("output_schema") if schemas else None
+            try:
+                structured = structured_output(result, schema)
+            except ToolExecutionError as exc:
+                log.warning("Tool %s output rejected: %s", name, exc.details["type"])
+                return _tool_error(rpc_id, exc, meta)
+
+            # Keep the text copy consistent with the structured result, including wrappers.
+            text_value = structured if structured is not None else result
+            if isinstance(text_value, str):
+                text_payload = text_value
             else:
                 try:
-                    text_payload = json.dumps(result, ensure_ascii=False)
+                    text_payload = json.dumps(text_value, ensure_ascii=False)
                 except Exception:
-                    text_payload = str(result)
+                    text_payload = str(text_value)
 
             # Add extra information to the response
             response_content = {
@@ -186,10 +220,10 @@ async def mcp_jsonrpc(
                 ]
             }
             # 对象结果同时返回结构化数据，供声明了 outputSchema 的客户端校验。
-            if isinstance(result, dict):
-                response_content["structuredContent"] = result
+            if structured is not None:
+                response_content["structuredContent"] = structured
             if meta:
-                response_content["meta"] = meta
+                response_content["_meta"] = meta
 
             return {
                 "jsonrpc": "2.0",

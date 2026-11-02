@@ -63,7 +63,7 @@ async def execute_rest_call(method: str, url: str, headers: Dict[str, str], quer
     if 400 <= resp.status_code < 600:
         raise http_error(resp)
     # 自动判定 json / text
-    ctype = resp.headers.get("Content-Type", "")
-    if "application/json" in ctype:
+    ctype = resp.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if ctype == "application/json" or ctype.endswith("+json"):
         return resp.json()
     return resp.text
