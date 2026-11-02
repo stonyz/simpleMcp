@@ -17,7 +17,7 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 ## Web 服务管理台
 
 浏览器访问 `http://localhost:8000/admin/`，输入 `.env` 中 `AUTH_TOKENS`
-配置的一个 Token 和目标 Tenant。管理台使用 React、TypeScript、Vite、Ant Design
+配置的管理员 Token 和目标 Tenant。管理台使用 React、TypeScript、Vite、Ant Design
 和本地加载的 Monaco 编辑器，不依赖外部 CDN。
 
 支持服务分页查询、按组织/应用筛选、搜索、YAML/JSON 上传或粘贴、工具变更预览、
@@ -26,13 +26,18 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 现有 `/services/register` 的兼容行为保持不变。详情区分文档声明工具和当前注册表生效工具，
 不检测上游健康状态。文档导出为数据库保存的 YAML，不保留原始文件的排版和注释。
 
-管理台沿用服务端共享 Token：持有有效 Token 的管理员可切换 Tenant，
-Tenant/Org/App 是数据范围筛选，不是用户级权限体系。Token 仅保存在页面内存中，
-刷新或退出后需要重新输入；接入示例使用 `YOUR_TOKEN` 占位符。
+管理台使用 `AUTH_TOKENS` 中的管理员凭证。组织和应用支持联动候选，也允许注册新的标识。
+候选来自持久化文档汇总，删除最后一份文档后对应分组消失。
+“访问凭证”页面管理全部租户的 MCP 客户端 Token：支持多个授权规则、租户/组织/应用/指定服务范围、
+分别控制工具列表和调用权限，以及停用、过期时间、密钥轮换和删除。
+数据库 Token 只用于 MCP，不能登录管理台或修改服务。
+新密钥仅在创建或轮换时展示一次，数据库只保存摘要和展示前缀。
+管理员登录 Token 仅保存在页面内存中，刷新或退出后需要重新输入。
 上游 `auth` 配置不回显，编辑时可保留、替换或清除。HTTP 请求日志用日志级别控制：
 `LOG_LEVEL=INFO` 记录方法、路径、状态和耗时；`.env` 设置 `LOG_LEVEL=DEBUG`
-并重启后，会额外在 `logs/request-YYYY-MM-DD.log` 中完整记录请求 URL、请求头、
-请求正文、响应头和文本响应正文（包括认证信息）。SSE 保持流式传输，不收集事件正文；
+并重启后，会额外在 `logs/request-YYYY-MM-DD.log` 中记录请求 URL、请求头、
+请求正文、响应头和文本响应正文。Authorization 头和 token 查询参数会脱敏，凭证管理接口只记录摘要；
+其他接口正文中的上游认证仍可能包含敏感信息。SSE 保持流式传输，不收集事件正文；
 二进制或压缩响应只记录类型提示，避免将图片等强行解码成文本。
 
 服务编辑页的“授权设置”按授权方式提供独立字段，无需手写 JSON：
@@ -338,6 +343,86 @@ MCP Server requires clients to authenticate using a token. Tokens can be configu
 - Authorization header: `Authorization: Bearer <token>`
 - Query parameter: `?token=<token>`
 
+`AUTH_TOKENS` contains platform administrator credentials. MCP client credentials
+are created in the Web console's **访问凭证** page and stored in SQLite.
+Configuration-based scope grants have been removed; old scope configuration is
+not imported automatically. Unknown, disabled and expired client tokens return
+401, including when `AUTH_TOKENS` is empty.
+
+A token may contain multiple allow rules; their permissions are combined:
+
+| Rule fields | Authorized resources |
+| --- | --- |
+| `tenant` | All current and future services in the tenant |
+| `tenant`, `org` | All current and future applications/services in the organization |
+| `tenant`, `org`, `app` | All current and future services in the application |
+| `tenant`, `org`, `app`, `services: [fileId, ...]` | Only the selected service documents |
+
+Each rule has `operations: ["list", "call"]` by default. Either operation can
+be removed independently. `services: null` permits the full scope; an empty
+service array is rejected. App rules require org; service rules require both.
+Rules may span multiple tenants, and selected services are validated against the
+database. Service identity is the full `tenant + org + app + fileId` tuple;
+updating a document in place preserves its grant. Broad scopes include future
+services, while deleting a selected service does not grant access to any other
+service. Re-registering the same full identity is treated as the same service.
+
+`tools/list` / `list_tools`, `/mcp/list` and `/functions/` automatically filter
+results to the token's list permissions. Clients do not have to supply org/app
+for authorization. Optional filters only narrow the result. `tools/call` /
+`call_tool` and `/mcp/call` check call permissions against the actual tool's
+registered org/app/fileId before execution. Unauthorized calls return HTTP 403.
+MCP initialize/ping require a tenant present in a grant. Multiple authorized tools
+with the same name remain ambiguous and require org/app filters.
+Call-only permissions continue to validate output schemas.
+
+Database tokens cannot access service administration or credential management.
+`AUTH_TOKENS` retains administrator access to management and all MCP tools.
+Use Bearer headers for client credentials. The console can copy an MCP connection
+example when issuing a token. JSON-RPC params take precedence over org/app headers.
+
+Administrator credential APIs:
+
+- `GET /credentials/`: list safe metadata, rules and status; no raw token or hash.
+- `GET /credentials/catalog`: tenant/org/app/service candidates from stored documents.
+- `POST /credentials/`: create a token and return its raw `secret` once.
+- `PUT /credentials/{id}`: replace metadata and rules, preserving the secret.
+- `PATCH /credentials/{id}/status`: enable/disable, even if selected services have been deleted.
+- `POST /credentials/{id}/rotate`: issue a new secret; invalidate the previous secret.
+- `DELETE /credentials/{id}`: remove the credential and its rules.
+
+Create/update payload example (service selection is optional):
+
+```json
+{
+  "name": "Partner order access",
+  "description": "Order integration",
+  "enabled": true,
+  "expires_at": null,
+  "rules": [
+    {"tenant": "customer-a", "org": "engineering", "app": "orders",
+     "services": ["orders-openapi"], "operations": ["list", "call"]}
+  ]
+}
+```
+
+Names, descriptions, expiry and enable state are editable. Expiry timestamps must
+include a timezone; the console converts local input to UTC. Secrets are generated
+with secure randomness; only SHA256 digests and non-authenticating prefixes are
+persisted. Credential responses use `Cache-Control: no-store` when returning
+secrets; request logging omits credential payloads and responses even at DEBUG.
+Recent-use timestamps update at most once per minute. Authorization is loaded
+from the database on each request; changes apply to subsequent requests without a
+restart. Requests already authenticated use their existing permission snapshot.
+No database Token is seeded automatically. Startup creates two new tables
+(`mcp_credentials`, `mcp_access_rules`) without changing stored service documents.
+Back up the SQLite database to preserve services and credentials together.
+
+`GET /services/access?tenant=...` and `GET /services/scopes?tenant=...` remain
+administrator-only console helpers. Tenant/org/app identifiers are case sensitive,
+nonempty, have no whitespace or path/query delimiters, and are limited to
+63/64/64 characters. Reading an unknown tenant does not create an in-memory registry.
+
 ### Upstream Service Authentication
 
 MCP Server can forward authentication credentials to upstream services. Two methods are supported:
@@ -632,12 +717,12 @@ When parameters are passed via multiple methods simultaneously, the priority is 
 #### tools/list (list_tools)
 - ✅ Supports filtering via `orgid`/`appid`
 - ✅ Supports HTTP Headers
-- ✅ Backward compatible (returns all tools when no parameters are provided)
+- ✅ Global administrators can list all tenant tools; database tokens only see authorized tools
 
 #### tools/call (call_tool)
 - ✅ Supports permission checking via `orgid`/`appid`
 - ✅ Supports HTTP Headers
-- ✅ Backward compatible (no permission check when parameters are not provided)
+- ✅ Applies token scope and role checks before execution; ambiguous tool names require org/app
 
 #### register
 - ✅ Supports `orgid`/`appid` isolation
@@ -645,31 +730,30 @@ When parameters are passed via multiple methods simultaneously, the priority is 
 
 ### Error Handling
 
-When access permissions are denied, detailed error information is returned:
+Scope and operation authorization failures return HTTP 403:
 
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
   "error": {
-    "code": -32000,
-    "message": "Function 'listFiles' not accessible for orgid 'wrong_org'. Function belongs to orgid 'cyberobject'"
+    "type": "HTTPException",
+    "status_code": 403,
+    "message": "Token does not permit this tool call"
   }
 }
 ```
 
 ### Backward Compatibility
 
-- When `orgid`/`appid` parameters are not provided, the system continues to work normally
-- Existing MCP clients can continue to be used without modification
-- The new isolation feature is optional and does not affect existing functionality
+- Existing global administrator tokens remain valid across all tenants.
+- Calls without org/app still work when exactly one tool matches the name.
+- Database credentials automatically filter authorized resources; client filters only narrow access.
 
 ### Best Practices
 
 1. **For new MCP clients**: It is recommended to pass `orgid`/`appid` via params
 2. **For existing standard MCP clients**: It is recommended to pass parameters via HTTP Headers
 3. **For simple scenarios**: Pass organization and application IDs on every request
-4. **For production environments**: It is recommended to always provide `orgid`/`appid` to ensure data isolation
+4. **For separate tenants or teams**: Create database MCP credentials in the console; org/app filters alone do not grant or restrict access
 
 ## Deployment
 

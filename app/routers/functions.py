@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
+from app.access import authorize_request
 from typing import Optional
 from app.mcp.tenant_manager import tenant_manager
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(authorize_request)])
 
 @router.get("/")
 async def list_functions(

@@ -4,6 +4,8 @@ from app.mcp.errors import ToolExecutionError
 from app.mcp.tool_executor import execute_tool
 from app.mcp.tool_registry import parse_tools_from_openapi
 from app.mcp.registry import MCPRegistry
+from app.access import current_policy
+from fastapi import HTTPException
 
 class TenantManager:
     """
@@ -68,21 +70,27 @@ class TenantManager:
 
 
     def list_functions(self, tenant: Optional[str] = None, orgid: Optional[str] = None, 
-                      appid: Optional[str] = None, name: Optional[str] = None) -> List[dict]:
+                      appid: Optional[str] = None, name: Optional[str] = None, _operation: str = 'list') -> List[dict]:
         """
         List functions from tenant-specific registry.
         """
-        tenant_registry = self.get_tenant_registry(tenant)
-        return tenant_registry.list_functions(orgid=orgid, appid=appid, name=name)
+        tenant_registry = self.tenant_registries.get(self._get_tenant_name(tenant))
+        policy = current_policy.get()
+        permitted = (lambda key, meta: policy.allows(self._get_tenant_name(tenant), key[0], key[1], meta.get('fileId'), _operation)) if policy else None
+        return tenant_registry.list_functions(orgid=orgid, appid=appid, name=name, permitted=permitted) if tenant_registry else []
     
     async def execute_tool(self, tenant: str, name: str, orgid: Optional[str] = None,
                     appid: Optional[str] = None, **kwargs) -> Tuple[Optional[ToolExecutionError], Any, Dict[str, Any]]:
         """
         Execute a tenant's tool, preserving execution errors and identity metadata.
         """
-        tenant_registry = self.get_tenant_registry(tenant)
-        tool_metadata = tenant_registry.get_tool_metadata(name, orgid=orgid, appid=appid)
+        tenant_registry = self.tenant_registries.get(self._get_tenant_name(tenant))
+        policy = current_policy.get()
+        permitted = (lambda key, meta: policy.allows(tenant, key[0], key[1], meta.get('fileId'), 'call')) if policy else None
+        tool_metadata = tenant_registry.get_tool_metadata(name, orgid=orgid, appid=appid, permitted=permitted) if tenant_registry else None
         if not tool_metadata:
+            if policy:
+                raise HTTPException(403, detail='Token does not permit this tool call')
             raise ValueError(f"Tool '{name}' not found")
 
         # 从工具元数据中获取身份信息并添加到 meta

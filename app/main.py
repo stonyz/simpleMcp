@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from app.access import authorize_request
 from app.config import settings
 from app.logger import setup_logging
 from app.midware.LoggingMiddleware import LoggingMiddleware
@@ -19,7 +20,7 @@ import logging
 setup_logging()
 log = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.APP_NAME)
+app = FastAPI(title=settings.APP_NAME, dependencies=[Depends(authorize_request)])
 
 # Add middleware
 # 注意中间件的顺序很重要，按照请求处理的顺序排列

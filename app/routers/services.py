@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, Query, Form, Depends, HTTPException
-from fastapi import Body
+from fastapi import Body, Request
+from app.access import authorize_request, check_identifier
 from sqlalchemy.orm import Session
 from typing import Optional
 from uuid import uuid4
@@ -11,8 +12,19 @@ from app.mcp.tool_registry import parse_tools_from_openapi
 from app import service_admin
 import logging
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(authorize_request)])
 log = logging.getLogger(__name__)
+
+
+@router.get('/access')
+def access_scope(request: Request, tenant: str = Query(...)):
+    return {'tenant': tenant, 'org': None, 'app': None, 'role': 'manager'}
+
+
+@router.get('/scopes')
+def scope_directory(request: Request, tenant: str = Query(...)):
+    with get_db_context() as db:
+        return service_admin.scope_directory(db, tenant)
 
 
 @router.get("/")
@@ -57,6 +69,8 @@ async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: Optio
     """
     公共的 OpenAPI 注册逻辑
     """
+    for field, value, limit in [('tenant', tenant, 63), ('org', org, 64), ('app', app, 64)]:
+        check_identifier(value, field, limit)
     # 基本校验
     if not isinstance(openapi_data, dict) or "paths" not in openapi_data:
         raise HTTPException(status_code=400, detail="OpenAPI content missing 'paths'")

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from app.access import authorize_request, rpc_scope
 from fastapi.responses import JSONResponse, Response
 from typing import Dict, Any, Optional
 from app.mcp.tenant_manager import tenant_manager
@@ -12,7 +13,7 @@ import json
 import logging
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(authorize_request)])
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-11-25")
 
 
@@ -71,6 +72,8 @@ async def mcp_call(
             return {"status": "error", "error": str(errorMessage),
                     "error_details": errorMessage.details, "meta": meta}
         return {"status": "success", "result": result, "meta": meta}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -87,7 +90,7 @@ async def mcp_jsonrpc(
     - 支持通过 HTTP Headers 传递 orgid/appid: X-Org-ID, X-App-ID
     返回严格的 JSON-RPC 2.0 格式。
     """
-    log.info(f"Received request: {request.method} {request.url}")
+    log.info('Received request: %s %s', request.method, request.url.path)
     try:
         body = await request.json()
     except Exception:
@@ -102,10 +105,6 @@ async def mcp_jsonrpc(
     params = body.get("params", {})
     valid_id = isinstance(rpc_id, str) or type(rpc_id) is int
     
-    # 从 HTTP Headers 或 params 获取 orgid/appid
-    header_orgid = request.headers.get("X-Org-ID")
-    header_appid = request.headers.get("X-App-ID")
-
     if jsonrpc != "2.0" or not isinstance(method, str) or ("id" in body and not valid_id):
         return _rpc_error(rpc_id if valid_id else None, -32600, "Invalid Request", 400)
 
@@ -150,8 +149,7 @@ async def mcp_jsonrpc(
 
         if method in ("tools/list", "list_tools"):
             # 优先使用 params 中的值，其次使用 headers
-            orgid = params.get("orgid") or header_orgid
-            appid = params.get("appid") or header_appid
+            orgid, appid = rpc_scope(request, params)
             name: Optional[str] = params.get("name")
 
             schemas = tenant_manager.list_functions(tenant=tenant, orgid=orgid, appid=appid, name=name)
@@ -179,8 +177,7 @@ async def mcp_jsonrpc(
                         "error": {"code": -32602, "message": "arguments must be an object"}}
             
             # 优先使用 params 中的值，其次使用 headers
-            call_orgid = params.get("orgid") or header_orgid
-            call_appid = params.get("appid") or header_appid
+            call_orgid, call_appid = rpc_scope(request, params)
             
             try:
                 errorMessage, result, meta = await tenant_manager.execute_tool(tenant=tenant, name = name, orgid=call_orgid, appid=call_appid, **arguments)
@@ -190,12 +187,14 @@ async def mcp_jsonrpc(
                 
                 if errorMessage:
                     return _tool_error(rpc_id, errorMessage, meta)
+            except HTTPException:
+                raise
             except Exception as e:
                 return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
 
             # Resolve the same schema advertised by tools/list for the executed tool.
             schemas = tenant_manager.list_functions(
-                tenant=tenant, name=name, orgid=meta.get("orgid"), appid=meta.get("appid"))
+                tenant=tenant, name=name, orgid=meta.get("orgid"), appid=meta.get("appid"), _operation='call')
             schema = schemas[0].get("output_schema") if schemas else None
             try:
                 structured = structured_output(result, schema)
@@ -233,6 +232,8 @@ async def mcp_jsonrpc(
 
         return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32601, "message": "Method not found"}}
 
+    except HTTPException:
+        raise
     except Exception as e:
         # 未预期的服务器错误
         return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": str(e)}}

@@ -89,7 +89,7 @@ class MCPRegistry:
             return False
         return True
 
-    def list_functions(self, orgid: Optional[str] = None, appid: Optional[str] = None, name: Optional[str] = None) -> List[dict]:
+    def list_functions(self, orgid: Optional[str] = None, appid: Optional[str] = None, name: Optional[str] = None, permitted=None) -> List[dict]:
         with self._lock:
             out = []
             
@@ -101,33 +101,28 @@ class MCPRegistry:
                         if self._matches_filters(key, orgid, appid):
                             # Found matching tool
                             item = self._registry.get(key)
-                            if item:
+                            if item and (permitted is None or permitted(key, item['func'])):
                                 out.append(item["schema"])
             else:
                 # No specific name requested, iterate through all tools
                 for key, item in self._registry.items():
                     # Apply org/app filters
-                    if self._matches_filters(key, orgid, appid):
+                    if self._matches_filters(key, orgid, appid) and (permitted is None or permitted(key, item['func'])):
                         out.append(item["schema"])
             return out
 
-    def _find_matching_key(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None) -> Optional[tuple]:
+    def _find_matching_key(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None, permitted=None) -> Optional[tuple]:
         """
         Find a registry key that matches the given name and optional orgid/appid filters.
         """
-        if orgid is not None and appid is not None:
-            # Look for exact match
-            key = (orgid, appid, name)
-            if key in self._registry:
-                return key
-        else:
-            # Look for any matching tool
-            if name in self._name_index and self._name_index[name]:
-                # Return the first matching tool
-                return self._name_index[name][0]
-        return None
+        matches = [key for key in self._name_index.get(name, [])
+                   if self._matches_filters(key, orgid, appid)
+                   and (permitted is None or permitted(key, self._registry[key]['func']))]
+        if len(matches) > 1:
+            raise ValueError(f"Tool '{name}' is ambiguous; specify orgid and appid")
+        return matches[0] if matches else None
 
-    def get_tool_metadata(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_tool_metadata(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None, permitted=None) -> Optional[Dict[str, Any]]:
         """
         Get the metadata for a tool by name, with optional org/app filtering.
         If orgid and appid are provided, only returns the tool if it belongs to that org/app.
@@ -135,7 +130,7 @@ class MCPRegistry:
         """
         with self._lock:
             # Find the matching key
-            key = self._find_matching_key(name, orgid, appid)
+            key = self._find_matching_key(name, orgid, appid, permitted)
             
             if key:
                 item = self._registry.get(key)

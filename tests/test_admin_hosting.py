@@ -81,6 +81,17 @@ class AdminHostingTests(unittest.TestCase):
         for value in ["q=QUERY", "HEADER", "请求正文", "received", "Req:", "Resp:"]:
             self.assertIn(value, logs)
 
+    def test_debug_credential_secrets_are_not_logged(self):
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+        app.post('/credentials/')(lambda: {'secret': 'ONCE_ONLY_SECRET'})
+        logger = logging.Logger('test-credential-logging', level=logging.DEBUG)
+        with patch('app.midware.LoggingMiddleware.request_logger', logger), self.assertLogs(logger, level='DEBUG') as captured, TestClient(app) as client:
+            response = client.post('/credentials/?token=QUERY_SECRET', headers={'Authorization': 'Bearer HEADER_SECRET'})
+            self.assertEqual(response.json()['secret'], 'ONCE_ONLY_SECRET')
+        for secret in ['ONCE_ONLY_SECRET', 'QUERY_SECRET', 'HEADER_SECRET']:
+            self.assertNotIn(secret, '\n'.join(captured.output))
+
     def test_debug_preserves_binary_cookies_and_streamed_response(self):
         from starlette.responses import Response, StreamingResponse
         app = FastAPI()

@@ -12,6 +12,7 @@ from sqlalchemy import select, func, or_
 from app.db import crud
 from app.db.models import OpenAPIFile
 from app.mcp.tool_registry import parse_tools_from_openapi
+from app.access import validate_identifier
 
 
 class ServiceInput(BaseModel):
@@ -24,7 +25,12 @@ class ServiceInput(BaseModel):
     auth_type: Optional[Literal["bearer", "basic", "oauth2"]] = None
     auth: Optional[str] = Field(default=None, max_length=65536)
 
-    @field_validator("org", "app", "fileName")
+    @field_validator('org', 'app')
+    @classmethod
+    def identifiers(cls, value, info):
+        return validate_identifier(value, info.field_name)
+
+    @field_validator("fileName")
     @classmethod
     def nonblank(cls, value):
         if not value.strip():
@@ -171,6 +177,24 @@ def list_documents(db, manager, tenant, org, app, q, page, page_size):
                       .offset((page - 1) * page_size).limit(page_size)).all()
     return {"items": [document_view(row, manager) for row in rows], "total": total,
             "page": page, "page_size": page_size}
+
+
+def scope_directory(db, tenant, org=None, app=None):
+    stmt = select(OpenAPIFile.orgid, OpenAPIFile.appid, func.count()).where(OpenAPIFile.tenant == tenant)
+    if org is not None:
+        stmt = stmt.where(OpenAPIFile.orgid == org)
+    if app is not None:
+        stmt = stmt.where(OpenAPIFile.appid == app)
+    rows = db.execute(stmt.group_by(OpenAPIFile.orgid, OpenAPIFile.appid)
+                      .order_by(OpenAPIFile.orgid, OpenAPIFile.appid)).all()
+    organizations = {}
+    total = 0
+    for org_id, app_id, count in rows:
+        organization = organizations.setdefault(org_id, {'org': org_id, 'service_count': 0, 'apps': []})
+        organization['apps'].append({'app': app_id, 'service_count': count})
+        organization['service_count'] += count
+        total += count
+    return {'tenant': tenant, 'service_count': total, 'organizations': list(organizations.values())}
 
 
 def preview_document(db, manager, tenant, body):

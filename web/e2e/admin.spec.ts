@@ -1,5 +1,90 @@
 import { test, expect } from '@playwright/test';
 
+test('database credentials can restrict services, edit rules, disable and rotate from the console', async ({ page, request }) => {
+  const admin = { Authorization: 'Bearer admin-e2e-token' };
+  for (const [fileId, name] of [['allowed', 'Allowed API'], ['hidden', 'Hidden API']]) {
+    const response = await request.post('/services/register?tenant=scope-test', { headers: admin, data: {
+      org: 'scoped-org', app: 'scoped-app', fileId, fileName: `${fileId}.yaml`, yaml_content: JSON.stringify({
+        openapi: '3.0.3', info: { title: name, version: '1' }, paths: { [`/${fileId}`]: { get: { operationId: fileId } } } }) } });
+    expect(response.ok()).toBeTruthy();
+  }
+  await page.goto('/admin/');
+  await page.getByLabel('访问 Token').fill('admin-e2e-token');
+  await page.getByLabel('Tenant').fill('scope-test');
+  await page.getByRole('button', { name: '进入管理台' }).click();
+  await page.getByRole('button', { name: '访问凭证', exact: true }).click();
+  await page.getByRole('button', { name: '创建凭证', exact: true }).click();
+  await page.getByLabel('凭证名称').fill('Partner A');
+  await page.getByLabel('授权范围').press('ArrowDown');
+  await page.getByText('指定服务', { exact: true }).click();
+  await page.getByLabel('组织', { exact: true }).fill('scoped-org');
+  await page.getByLabel('应用', { exact: true }).fill('scoped-app');
+  await page.getByLabel('服务', { exact: true }).press('ArrowDown');
+  await page.locator('.ant-select-item-option[title="Allowed API · allowed.yaml · allowed"]').click();
+  await page.getByLabel('凭证名称').click();
+  await page.getByRole('button', { name: '保存凭证', exact: true }).click();
+  await expect(page.getByText('此 Token 仅显示一次')).toBeVisible();
+  const secret = (await page.locator('.credential-secret').innerText()).match(/mcp_[A-Za-z0-9_-]+/)![0];
+  const rpc = (token: string) => request.post('/mcp?tenant=scope-test', { headers: { Authorization: `Bearer ${token}` },
+    data: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} } });
+  expect((await (await rpc(secret)).json()).result.tools.map((item: { name: string }) => item.name)).toEqual(['allowed']);
+  const denied = await request.post('/mcp?tenant=scope-test', { headers: { Authorization: `Bearer ${secret}` },
+    data: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hidden', arguments: {} } } });
+  expect(denied.status()).toBe(403);
+  expect((await request.get('/services/access?tenant=scope-test', { headers: { Authorization: `Bearer ${secret}` } })).status()).toBe(403);
+  await page.getByRole('button', { name: '我已保存' }).click();
+  await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '编辑权限' }).click();
+  await page.getByRole('button', { name: '添加授权规则' }).click();
+  await expect(page.getByText('授权规则 2', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '保存凭证', exact: true }).click();
+  expect((await (await rpc(secret)).json()).result.tools.map((item: { name: string }) => item.name).sort()).toEqual(['allowed', 'hidden']);
+  await page.getByRole('switch', { name: '启用 Partner A' }).click();
+  await expect(page.getByText('已停用', { exact: true })).toBeVisible();
+  expect((await rpc(secret)).status()).toBe(401);
+  await page.getByRole('switch', { name: '启用 Partner A' }).click();
+  await expect(page.getByText('有效', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '轮换', exact: true }).click();
+  await page.getByRole('button', { name: '确认轮换', exact: true }).click();
+  const rotated = (await page.locator('.credential-secret').innerText()).match(/mcp_[A-Za-z0-9_-]+/)![0];
+  expect(rotated).not.toBe(secret);
+  expect((await rpc(secret)).status()).toBe(401);
+  expect((await rpc(rotated)).status()).toBe(200);
+  await page.getByRole('button', { name: '我已保存' }).click();
+  await expect(page.locator('.ant-modal-content')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/credentials-desktop.png', fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: '删除', exact: true }).click();
+  await page.getByRole('button', { name: '确认删除凭证' }).click();
+  await expect(page.getByText('Partner A', { exact: true })).toHaveCount(0);
+  expect((await rpc(rotated)).status()).toBe(401);
+});
+
+test('registration offers persisted org/app candidates and clears app on org change', async ({ page, request }) => {
+  for (const [org, app] of [['catalog-org-a', 'catalog-app-a'], ['catalog-org-b', 'catalog-app-b']]) {
+    const response = await request.post('/services/register?tenant=catalog-test', {
+      headers: { Authorization: 'Bearer admin-e2e-token' },
+      data: { org, app, fileName: 'catalog.yaml', yaml_content: JSON.stringify({
+        openapi: '3.0.3', info: { title: org, version: '1' }, paths: {} }) },
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+  await page.goto('/admin/');
+  await page.getByLabel('访问 Token').fill('admin-e2e-token');
+  await page.getByLabel('Tenant').fill('catalog-test');
+  await page.getByRole('button', { name: '进入管理台' }).click();
+  await page.getByRole('button', { name: '注册服务' }).first().click();
+  await page.getByLabel('组织 Org').click();
+  await page.locator('.ant-select-item-option[title="catalog-org-a"]').click();
+  await page.getByLabel('应用 App').click();
+  await expect(page.locator('.ant-select-item-option[title="catalog-app-a"]')).toBeVisible();
+  await expect(page.locator('.ant-select-item-option[title="catalog-app-b"]')).toHaveCount(0);
+  await page.locator('.ant-select-item-option[title="catalog-app-a"]').click();
+  await page.getByLabel('组织 Org').fill('catalog-org-b');
+  await expect(page.getByLabel('应用 App')).toHaveValue('');
+  await page.getByLabel('应用 App').click();
+  await expect(page.locator('.ant-select-item-option[title="catalog-app-b"]')).toBeVisible();
+});
+
 const yaml = `openapi: 3.0.3
 info:
   title: Browser Test API
@@ -69,6 +154,14 @@ test('mobile login and service list have no horizontal overflow', async ({ page 
   await expect(page.locator('.ant-spin-spinning')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
+  await page.getByRole('button', { name: '访问凭证', exact: true }).click();
+  await expect(page.getByRole('button', { name: '创建凭证', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: 'test-results/credentials-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: '创建凭证', exact: true }).click();
+  await expect(page.getByLabel('凭证名称')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: 'test-results/credential-editor-mobile.png', fullPage: true, animations: 'disabled' });
 });
 
 test('local Monaco, upload, preview invalidation and conflict rejection', async ({ page }) => {

@@ -21,6 +21,19 @@ export interface Preview {
   conflicts: { name: string; fileId: string; fileName: string }[];
 }
 export type Api = ReturnType<typeof createApi>;
+export interface AccessScope { tenant: string; org: string | null; app: string | null; role: 'reader' | 'caller' | 'manager' }
+export interface ScopeDirectory {
+  tenant: string; service_count: number;
+  organizations: { org: string; service_count: number; apps: { app: string; service_count: number }[] }[];
+}
+export interface AccessRule { tenant: string; org: string | null; app: string | null; services: string[] | null; operations: ('list' | 'call')[] }
+export interface CredentialInput { name: string; description: string; enabled: boolean; expires_at: string | null; rules: AccessRule[] }
+export interface Credential extends CredentialInput {
+  id: string; token_prefix: string; status: 'active' | 'disabled' | 'expired';
+  created_at: string; updated_at: string; last_used_at: string | null;
+}
+export interface IssuedCredential extends Credential { secret: string }
+export interface CatalogService { tenant: string; org: string; app: string; fileId: string; title: string; fileName: string }
 
 export function createApi(token: string, tenant: string, unauthorized?: () => void) {
   async function request<T>(path: string, query: Record<string, string | number> = {}, body?: unknown,
@@ -47,6 +60,15 @@ export function createApi(token: string, tenant: string, unauthorized?: () => vo
   }
   const identity = (row: Service) => ({ org: row.org, app: row.app, fileId: row.fileId });
   return {
+    credentials: (signal?: AbortSignal) => request<{ items: Credential[] }>('/credentials/', {}, undefined, 'GET', signal),
+    credentialCatalog: (signal?: AbortSignal) => request<{ services: CatalogService[] }>('/credentials/catalog', {}, undefined, 'GET', signal),
+    createCredential: (body: CredentialInput) => request<IssuedCredential>('/credentials/', {}, body, 'POST'),
+    updateCredential: (id: string, body: CredentialInput) => request<Credential>(`/credentials/${id}`, {}, body, 'PUT'),
+    rotateCredential: (id: string) => request<IssuedCredential>(`/credentials/${id}/rotate`, {}, undefined, 'POST'),
+    setCredentialStatus: (id: string, enabled: boolean) => request<Credential>(`/credentials/${id}/status`, {}, { enabled }, 'PATCH'),
+    deleteCredential: (id: string) => request(`/credentials/${id}`, {}, undefined, 'DELETE'),
+    access: () => request<AccessScope>('/services/access'),
+    scopes: (signal?: AbortSignal) => request<ScopeDirectory>('/services/scopes', {}, undefined, 'GET', signal),
     list: (query: Record<string, string | number>, signal?: AbortSignal) => request<Listing>('/services/', query, undefined, 'GET', signal),
     detail: (row: Service, signal?: AbortSignal) => request<Detail>('/services/detail', identity(row), undefined, 'GET', signal),
     preview: (body: ServiceInput) => request<Preview>('/services/preview', {}, body, 'POST'),

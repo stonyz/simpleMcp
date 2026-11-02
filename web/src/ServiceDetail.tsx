@@ -5,7 +5,7 @@ import { downloadDocument, time, type Api, type Detail, type Service } from './a
 import { authorizationLabels } from './AuthorizationSettings';
 
 export default function ServiceDetail({ api, row, onClose, onEdit }: {
-  api: Api; row: Service; onClose: () => void; onEdit: () => void;
+  api: Api; row: Service; onClose: () => void; onEdit?: () => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -20,7 +20,7 @@ export default function ServiceDetail({ api, row, onClose, onEdit }: {
     type: 'http', url: mcpUrl,
     headers: { Authorization: 'Bearer YOUR_TOKEN', 'X-Org-ID': row.org, 'X-App-ID': row.app },
   } } }, null, 2);
-  return <Drawer open width={900} title="服务详情" onClose={onClose} extra={<Button type="primary" onClick={onEdit}>编辑服务</Button>}>
+  return <Drawer open width={900} title="服务详情" onClose={onClose} extra={onEdit && <Button type="primary" onClick={onEdit}>编辑服务</Button>}>
     {error ? <Alert type="error" showIcon message={error} /> : !detail ? <div className="loading-panel"><Spin /></div> : <>
       <div className="detail-title"><Tag color="green">OPENAPI {detail.version}</Tag><h2>{detail.title}</h2><p>{detail.fileName}</p></div>
       {detail.error && <Alert type="warning" message={detail.error} />}

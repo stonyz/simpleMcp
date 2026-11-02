@@ -1,10 +1,18 @@
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
 from app.config import settings
+from app.db import get_db_context
+from app.credentials import authenticate
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def load_policy(token):
+    with get_db_context() as db:
+        return authenticate(db, token)
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -34,16 +42,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
         
         # Check if the token is in our valid tokens list
         valid_tokens = settings.AUTH_TOKENS
-        if valid_tokens and token not in valid_tokens:
+        policy = None
+        if token not in valid_tokens:
+            policy = await run_in_threadpool(load_policy, token)
+        if token not in valid_tokens and policy is None:
             log.warning(f"Unauthorized access attempt to {request.url.path} - Invalid token")
             return JSONResponse(
                 status_code=401,
                 content={"error": "Invalid or unauthorized token"}
             )
         
-        # If we have no tokens configured, allow the request (backward compatibility)
-        if not valid_tokens:
-            log.debug("No AUTH_TOKENS configured, skipping authentication")
+        request.state.mcp_policy = policy
         
         # Proceed with the request
         response = await call_next(request)

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Alert, App, Button, Drawer, Form, Input, Space, Spin, Table, Tag, Upload, Typography } from 'antd';
+import { Alert, App, AutoComplete, Button, Drawer, Form, Input, Space, Spin, Table, Tag, Upload, Typography } from 'antd';
 import { CheckCircleOutlined, UploadOutlined } from '@ant-design/icons';
-import type { Api, Preview, Service, ServiceInput } from './api';
+import type { AccessScope, Api, Preview, ScopeDirectory, Service, ServiceInput } from './api';
 import AuthorizationSettings, { authorizationInput, type EditorValues } from './AuthorizationSettings';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
@@ -21,10 +21,11 @@ paths:
           description: OK
 `;
 
-export default function ServiceEditor({ api, tenant, row, onClose, onSaved }: {
-  api: Api; tenant: string; row: Service | null; onClose: () => void; onSaved: () => void;
+export default function ServiceEditor({ api, tenant, access, directory, row, onClose, onSaved }: {
+  api: Api; tenant: string; access: AccessScope; directory: ScopeDirectory; row: Service | null; onClose: () => void; onSaved: () => void;
 }) {
   const [form] = Form.useForm<EditorValues>();
+  const selectedOrg = Form.useWatch('org', form);
   const { message } = App.useApp();
   const [document, setDocument] = useState(row ? '' : sample);
   const [plain, setPlain] = useState(false);
@@ -74,11 +75,14 @@ export default function ServiceEditor({ api, tenant, row, onClose, onSaved }: {
     <Spin spinning={loading}>
       <div className="scope-note">当前租户 <Tag>{tenant}</Tag>{row && <Typography.Text type="secondary">文档 ID：{row.fileId}</Typography.Text>}</div>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
-      <Form name="service-editor" form={form} layout="vertical" initialValues={{ org: row?.org || '', app: row?.app || '', fileName: row?.fileName || 'openapi.yaml', auth_mode: row ? 'keep' : 'none' }}
-        onValuesChange={invalidate} disabled={busy || loading}>
+      <Form name="service-editor" form={form} layout="vertical" initialValues={{ org: row?.org || access.org || '', app: row?.app || access.app || '', fileName: row?.fileName || 'openapi.yaml', auth_mode: row ? 'keep' : 'none' }}
+        onValuesChange={changed => { if ('org' in changed) form.setFieldValue('app', access.app || ''); invalidate(); }} disabled={busy || loading}>
         <div className="form-grid">
-          <Form.Item label="组织 Org" name="org" rules={[{ required: true, whitespace: true, max: 64 }]}><Input disabled={!!row || busy || loading} placeholder="例如 cyberobject" /></Form.Item>
-          <Form.Item label="应用 App" name="app" rules={[{ required: true, whitespace: true, max: 64 }]}><Input disabled={!!row || busy || loading} placeholder="例如 qacheck" /></Form.Item>
+          <Form.Item label="组织 Org" name="org" rules={[{ required: true, whitespace: true, max: 64 }]}><AutoComplete disabled={!!row || !!access.org || busy || loading} placeholder="选择或输入组织标识"
+            options={directory.organizations.map(item => ({ value: item.org }))} filterOption={(input, option) => !!option?.value.includes(input)} /></Form.Item>
+          <Form.Item label="应用 App" name="app" rules={[{ required: true, whitespace: true, max: 64 }]}><AutoComplete disabled={!!row || !!access.app || busy || loading} placeholder="选择或输入应用标识"
+            options={directory.organizations.find(item => item.org === selectedOrg)?.apps.map(item => ({ value: item.app })) || []}
+            filterOption={(input, option) => !!option?.value.includes(input)} /></Form.Item>
           <Form.Item label="文件名" name="fileName" rules={[{ required: true, whitespace: true, max: 256 }]}><Input placeholder="openapi.yaml" /></Form.Item>
         </div>
         <div className="editor-toolbar"><strong>OpenAPI 文档 <small>YAML / JSON · 最大 2 MB</small></strong><Space wrap>
