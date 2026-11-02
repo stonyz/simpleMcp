@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 import requests
+import httpx
 
 
 MAX_ERROR_BODY = 4096
@@ -41,7 +42,7 @@ class ToolExecutionError(Exception):
         self.details = details
 
 
-def http_error(response: requests.Response, *, include_body: bool = True) -> ToolExecutionError:
+def http_error(response: requests.Response | httpx.Response, *, include_body: bool = True) -> ToolExecutionError:
     """Keep HTTP failure information without including request URLs or headers."""
     status = response.status_code
     try:
@@ -88,11 +89,11 @@ def http_error(response: requests.Response, *, include_body: bool = True) -> Too
     return ToolExecutionError(f"{message}：{cause[:MAX_ERROR_BODY]}", details)
 
 
-def request_error(exception: requests.RequestException) -> ToolExecutionError:
+def request_error(exception: requests.RequestException | httpx.RequestError | TimeoutError) -> ToolExecutionError:
     """Network errors have no upstream HTTP status; raw exceptions can expose URLs."""
-    if isinstance(exception, requests.Timeout):
+    if isinstance(exception, (requests.Timeout, httpx.TimeoutException, TimeoutError)):
         kind, message = "upstream_timeout", "上游接口请求超时"
-    elif isinstance(exception, requests.ConnectionError):
+    elif isinstance(exception, (requests.ConnectionError, httpx.NetworkError, httpx.ProxyError)):
         kind, message = "upstream_connection_error", "无法连接上游接口"
     else:
         kind, message = "upstream_request_error", "上游接口请求失败"

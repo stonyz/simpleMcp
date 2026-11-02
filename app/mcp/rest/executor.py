@@ -1,7 +1,11 @@
-import requests
+import asyncio
+import time
+import httpx
 import logging
 import fnmatch
 from typing import Dict, Any
+from requests import PreparedRequest
+from requests.utils import prepend_scheme_if_needed
 from app.config import settings
 from app.mcp.errors import http_error, request_error
 
@@ -23,35 +27,38 @@ def _should_use_proxy(url: str) -> bool:
     
     return False
 
-def execute_rest_call(method: str, url: str, headers: Dict[str, str], query: Dict[str, Any], body: Any) -> Any:
-    """Execute the actual REST call and return the response"""
-    import time
-    start_time = time.time()
+async def execute_rest_call(method: str, url: str, headers: Dict[str, str], query: Dict[str, Any], body: Any,
+                            request_timeout_seconds: float = 30) -> Any:
+    """Bound the entire HTTP exchange, including redirects and the response body."""
+    start_time = time.monotonic()
     log.debug(f"Send request to api: {method} {url}")
+
+    # Preserve existing URL queries and Requests' null/list/bool query encoding
+    # while using HTTPX for cancellable network I/O.
+    prepared = PreparedRequest()
+    prepared.prepare_url(url, query)
     
     # Prepare request parameters
     request_params = {
         "method": method.upper(),
-        "url": url,
+        "url": prepared.url,
         "headers": headers,
-        "params": query,
         "json": body,
-        "timeout": 30
     }
     
     # Add proxy if needed
+    client_options = {"timeout": None, "follow_redirects": True, "max_redirects": 30}
     if _should_use_proxy(url):
-        request_params["proxies"] = {
-            "http": settings.PROXY_URL,
-            "https": settings.PROXY_URL
-        }
+        client_options["proxy"] = prepend_scheme_if_needed(settings.PROXY_URL, "http")
         log.debug(f"Using proxy {settings.PROXY_URL} for URL: {url}")
     
     try:
-        resp = requests.request(**request_params)
-    except requests.RequestException as exc:
+        async with asyncio.timeout(request_timeout_seconds):
+            async with httpx.AsyncClient(**client_options) as client:
+                resp = await client.request(**request_params)
+    except (TimeoutError, httpx.RequestError) as exc:
         raise request_error(exc) from exc
-    elapsed_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+    elapsed_time = (time.monotonic() - start_time) * 1000
     log.debug(f"Get response from api: {method} {url} with status {resp.status_code} in {elapsed_time:.2f} ms")
     if 400 <= resp.status_code < 600:
         raise http_error(resp)

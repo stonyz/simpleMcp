@@ -113,6 +113,33 @@ class SQLiteTests(unittest.TestCase):
             engine.dispose()
         """)
 
+    def test_operation_timeout_survives_document_reload(self):
+        self.run_isolated("""
+            import yaml
+            from app.db import Base, engine, get_db_context, crud
+            from app.mcp.tenant_manager import TenantManager
+
+            Base.metadata.create_all(engine)
+            data = {
+                'info': {'title': 'API', 'version': '1'},
+                'servers': [{'url': 'https://example.com'}],
+                'paths': {'/report': {'get': {
+                    'operationId': 'report', 'x-request-timeout-seconds': 120,
+                }}},
+            }
+            with get_db_context() as db:
+                crud.upsert_openapi_file(db, 'tenant', 'org', 'app', 'file', 'api.yaml', data)
+            manager = TenantManager()
+            with get_db_context() as db:
+                row = crud.get_one_openapi(db, 'tenant', 'org', 'app', 'file')
+                manager.register_tools_from_openapi(
+                    row.tenant, row.orgid, row.appid, yaml.safe_load(row.openapi_yaml),
+                    row.fileId, row.fileName, row.auth)
+            metadata = manager.get_tenant_registry('tenant').get_tool_metadata('report')
+            assert metadata['request_timeout_seconds'] == 120
+            engine.dispose()
+        """)
+
 
 if __name__ == "__main__":
     unittest.main()

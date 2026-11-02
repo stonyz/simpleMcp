@@ -6,6 +6,7 @@ import yaml, json
 from app.db import get_db, get_db_context
 from app.db import crud
 from app.mcp.tenant_manager import tenant_manager
+from app.mcp.tool_registry import parse_tools_from_openapi
 import logging
 
 router = APIRouter()
@@ -18,6 +19,12 @@ async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: str, 
     # 基本校验
     if not isinstance(openapi_data, dict) or "paths" not in openapi_data:
         raise HTTPException(status_code=400, detail="OpenAPI content missing 'paths'")
+
+    # Validate all operations before persisting or changing the live registry.
+    try:
+        parse_tools_from_openapi(org, app, openapi_data, fileId, fileName)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # 使用现有的数据库操作方式
     with get_db_context() as db:

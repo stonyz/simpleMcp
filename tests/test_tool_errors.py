@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-import requests
+import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -34,14 +34,8 @@ class ToolErrorTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def upstream(self, body, status=502, content_type="application/json"):
-        response = requests.Response()
-        response.status_code = status
-        response.reason = "Bad Gateway"
-        response.url = self.metadata["url_template"]
-        response.headers["Content-Type"] = content_type
-        response.encoding = "utf-8"
-        response._content = body.encode("utf-8")
-        return response
+        return httpx.Response(status, content=body.encode("utf-8"),
+                              headers={"Content-Type": content_type})
 
     def call(self, arguments=None, method="tools/call", **params):
         return self.client.post("/mcp?tenant=test", json={
@@ -72,7 +66,7 @@ class ToolErrorTests(unittest.TestCase):
     def test_chinese_http_error_is_visible_for_both_mcp_aliases(self):
         for method in ("tools/call", "call_tool"):
             with self.subTest(method=method), patch(
-                "app.mcp.rest.executor.requests.request",
+                "app.mcp.rest.executor.httpx.AsyncClient.request",
                 return_value=self.upstream('{"error":"手表不在线，无法获取位置信息"}'),
             ):
                 message, details = self.assert_execution_error(
@@ -82,7 +76,7 @@ class ToolErrorTests(unittest.TestCase):
                 self.assertEqual(details["body"], {"error": "手表不在线，无法获取位置信息"})
 
     def test_legacy_endpoint_preserves_string_error_and_adds_details(self):
-        with patch("app.mcp.rest.executor.requests.request",
+        with patch("app.mcp.rest.executor.httpx.AsyncClient.request",
                    return_value=self.upstream('{"error":"手表不在线"}')):
             response = self.client.post("/mcp/call?tenant=test", json={
                 "function_name": "getWatchLocation", "parameters": {}})
@@ -106,7 +100,7 @@ class ToolErrorTests(unittest.TestCase):
         ]
         for body, ctype, expected_message, expected_body in fixtures:
             with self.subTest(body=body), patch(
-                "app.mcp.rest.executor.requests.request",
+                "app.mcp.rest.executor.httpx.AsyncClient.request",
                 return_value=self.upstream(body, content_type=ctype),
             ):
                 message, details = self.assert_execution_error(self.call(), "upstream_http_error", 502)
@@ -122,7 +116,7 @@ class ToolErrorTests(unittest.TestCase):
                            "nested": [{"access_token": "access-secret", "password": "password-secret",
                                        "client_secret": "client-secret", "refresh_token": "refresh-secret",
                                        "Authorization": "header-secret", "api_key": "api-secret"}]})
-        with patch("app.mcp.rest.executor.requests.request", return_value=self.upstream(body)):
+        with patch("app.mcp.rest.executor.httpx.AsyncClient.request", return_value=self.upstream(body)):
             response = self.call()
         self.assert_execution_error(response, "upstream_http_error", 502)
         for secret in ("text-secret", "bearer-secret", "access-secret", "password-secret",
@@ -130,7 +124,7 @@ class ToolErrorTests(unittest.TestCase):
             self.assertNotIn(secret, response.text)
 
     def test_long_body_is_bounded_and_marked_truncated(self):
-        with patch("app.mcp.rest.executor.requests.request",
+        with patch("app.mcp.rest.executor.httpx.AsyncClient.request",
                    return_value=self.upstream(json.dumps({"error": "长" * 6000}))):
             message, details = self.assert_execution_error(self.call(), "upstream_http_error", 502)
         self.assertTrue(details["truncated"])
@@ -141,7 +135,7 @@ class ToolErrorTests(unittest.TestCase):
     def test_basic_auth_and_text_assignments_are_redacted(self):
         text = 'Authorization: Basic dXNlcjpwYXNz password="plain secret" api_key=key-secret'
         for body, ctype in ((text, "text/plain"), (json.dumps({"error": text}), "application/json")):
-            with self.subTest(ctype=ctype), patch("app.mcp.rest.executor.requests.request",
+            with self.subTest(ctype=ctype), patch("app.mcp.rest.executor.httpx.AsyncClient.request",
                                                 return_value=self.upstream(body, content_type=ctype)):
                 response = self.call()
                 self.assert_execution_error(response, "upstream_http_error", 502)
@@ -150,11 +144,11 @@ class ToolErrorTests(unittest.TestCase):
 
     def test_network_failures_have_no_invented_http_status(self):
         for exception, kind in [
-            (requests.Timeout("url-secret"), "upstream_timeout"),
-            (requests.ConnectionError("url-secret"), "upstream_connection_error"),
-            (requests.RequestException("url-secret"), "upstream_request_error"),
+            (httpx.ReadTimeout("url-secret"), "upstream_timeout"),
+            (httpx.ConnectError("url-secret"), "upstream_connection_error"),
+            (httpx.RequestError("url-secret"), "upstream_request_error"),
         ]:
-            with self.subTest(kind=kind), patch("app.mcp.rest.executor.requests.request", side_effect=exception):
+            with self.subTest(kind=kind), patch("app.mcp.rest.executor.httpx.AsyncClient.request", side_effect=exception):
                 self.assert_execution_error(self.call(), kind)
 
     def test_oauth_failure_keeps_message_without_full_body(self):
@@ -175,7 +169,7 @@ class ToolErrorTests(unittest.TestCase):
 
     def test_unexpected_execution_exception_is_generic(self):
         with self.assertLogs("app.mcp.tool_executor", level="ERROR") as logs, patch(
-            "app.mcp.rest.executor.requests.request", side_effect=RuntimeError("private-stack-secret")
+            "app.mcp.rest.executor.httpx.AsyncClient.request", side_effect=RuntimeError("private-stack-secret")
         ):
             response = self.call()
         self.assert_execution_error(response, "tool_execution_error")
@@ -214,7 +208,7 @@ class ToolErrorTests(unittest.TestCase):
     def test_success_shapes_are_unchanged(self):
         for body, ctype, expected in [('{"online":true}', "application/json", {"online": True}),
                                       ("ready", "text/plain", "ready")]:
-            with self.subTest(body=body), patch("app.mcp.rest.executor.requests.request",
+            with self.subTest(body=body), patch("app.mcp.rest.executor.httpx.AsyncClient.request",
                                               return_value=self.upstream(body, 200, ctype)):
                 payload = self.call().json()
                 self.assertNotIn("error", payload)

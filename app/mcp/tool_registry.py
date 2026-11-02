@@ -1,4 +1,5 @@
 import logging
+import math
 import copy
 import os
 from typing import Dict, Any, List, Tuple, Optional
@@ -326,6 +327,17 @@ def parse_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any
                 continue
 
             name = op.get("operationId") or _make_function_name(method, path)
+            request_timeout = op.get("x-request-timeout-seconds", 30)
+            try:
+                valid_timeout = (not isinstance(request_timeout, bool)
+                                 and isinstance(request_timeout, (int, float))
+                                 and math.isfinite(request_timeout) and request_timeout > 0)
+            except OverflowError:
+                valid_timeout = False
+            if not valid_timeout:
+                raise ValueError(
+                    f"{method.upper()} {path}: x-request-timeout-seconds must be a finite positive number"
+                )
             parameters, request_body_schema = _collect_parameters(op, openapi_data)
             response_schema = _extract_response_schema(op, openapi_data)
             security_schemes = _extract_security_schemes(openapi_data)
@@ -335,6 +347,7 @@ def parse_tools_from_openapi(orgid: str, appid: str, openapi_data: Dict[str, Any
                 "type": "rest_api",
                 "method": method,
                 "url_template": f"{base_url}{path}",
+                "request_timeout_seconds": request_timeout,
                 "parameters": parameters,
                 "body_schema": request_body_schema,
                 "security_schemes": security_schemes,

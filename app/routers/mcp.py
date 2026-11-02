@@ -44,7 +44,7 @@ async def mcp_call(
     }
     """
     try:
-        errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name=function_name, orgid=orgid, appid=appid, **parameters)
+        errorMessage, result, meta = await tenant_manager.execute_tool(tenant=tenant, name=function_name, orgid=orgid, appid=appid, **parameters)
         
         # 获取request_id并添加到meta中
         meta["x-request-id"] = request_id_context.get("")
@@ -155,7 +155,7 @@ async def mcp_jsonrpc(
             call_appid = params.get("appid") or header_appid
             
             try:
-                errorMessage, result, meta = tenant_manager.execute_tool(tenant=tenant, name = name, orgid=call_orgid, appid=call_appid, **arguments)
+                errorMessage, result, meta = await tenant_manager.execute_tool(tenant=tenant, name = name, orgid=call_orgid, appid=call_appid, **arguments)
                 
                 # 获取request_id并添加到meta中
                 meta["x-request-id"] = request_id_context.get("")

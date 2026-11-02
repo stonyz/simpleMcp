@@ -84,6 +84,60 @@ Functions extracted from OpenAPI specifications are stored in a registry and can
 - Executing registered functions
 - Managing function metadata
 
+### Per-operation request timeout
+
+Use `x-request-timeout-seconds` on an OpenAPI **operation** to declare the
+time budget for that API. This is a custom extension supported by this gateway,
+not a standard OpenAPI timeout field; other tools may ignore it.
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Example API
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /status:
+    get:
+      operationId: getStatus
+      x-request-timeout-seconds: 5
+      responses:
+        '200':
+          description: Current status
+  /reports:
+    post:
+      operationId: generateReport
+      x-request-timeout-seconds: 120
+      responses:
+        '200':
+          description: Generated report
+```
+
+- The value must be a finite positive number in **seconds**; fractions such as
+  `0.5` are supported. Zero, negative values, strings, booleans and null are
+  rejected with HTTP 400 during registration, before the document is saved or
+  the live registry is changed.
+- An operation without this field defaults to **30 seconds**. Root-level and
+  path-level values are not inherited; set it on each operation that needs an
+  override.
+- The budget covers the target upstream HTTP exchange: connection establishment,
+  request transmission, all followed redirects, and reading the complete response
+  body. Receiving occasional data does **not** reset the deadline. This replaces
+  the previous fixed Requests timeout, which limited connection/read waits rather
+  than the whole exchange.
+- Argument validation, obtaining an OAuth token before the target request, and
+  formatting the MCP response are outside this budget. MCP clients and intervening
+  proxies have their own timeouts and may end the call earlier.
+- On expiry the gateway cancels its HTTP exchange and returns the existing
+  `upstream_timeout` execution error (`result.isError: true` for JSON-RPC;
+  `status: "error"` for `/mcp/call`). Cancellation does not guarantee that the
+  upstream service stops work already accepted; no automatic retry is performed.
+- Register the updated OpenAPI document using `/services/register` (JSON) or
+  `/services/register-form` (form/file). The extension is stored with the document,
+  takes effect on registration, and is restored on server startup. It is not a
+  tool argument and is not forwarded to the upstream API.
+
 ### Authentication
 
 MCP Server supports multiple authentication mechanisms for both client access to the server and forwarding authentication to upstream services.

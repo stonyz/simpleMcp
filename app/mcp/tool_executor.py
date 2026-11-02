@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import json
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -11,7 +12,7 @@ from app.mcp.errors import ToolExecutionError, redact, MAX_ERROR_BODY, request_e
 log = logging.getLogger(__name__)
 
 
-def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
+async def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
     """
     生成实际的可调用函数：将 kwargs 映射到 path / query / body
     添加了参数验证功能，确保必需参数存在且符合 OpenAPI 规范
@@ -44,7 +45,7 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
     
     # Process auth headers if we have auth data
     if "auth" in kwargs:
-        auth_headers = AuthHandler.process_auth_headers(kwargs["auth"])
+        auth_headers = await asyncio.to_thread(AuthHandler.process_auth_headers, kwargs["auth"])
         headers.update(auth_headers)  # Merge auth headers with existing headers
         del kwargs["auth"]
     
@@ -74,7 +75,8 @@ def _make_rest_callable(tool_metadata: Dict[str, Any], **kwargs):
                 body = kwargs["body"]
     
     # Execute the REST call
-    return execute_rest_call(method, url, headers, query, body)
+    return await execute_rest_call(method, url, headers, query, body,
+                                   request_timeout_seconds=tool_metadata.get("request_timeout_seconds", 30))
    
 
 
@@ -283,11 +285,11 @@ def _validate_auth_against_security_scheme(auth_value: Any, security_scheme: Dic
 ToolExecutor handles the actual execution of registered tools.
 This separates the execution logic from the registration/loading logic.
 """
-def execute_tool(tool_metadata, **kwargs) -> Tuple[Optional[ToolExecutionError], Any]:
+async def execute_tool(tool_metadata, **kwargs) -> Tuple[Optional[ToolExecutionError], Any]:
     # Based on the tool type, create and execute the appropriate function
     if tool_metadata["type"] == "rest_api":         
         try:
-            result = _make_rest_callable(tool_metadata, **kwargs)
+            result = await _make_rest_callable(tool_metadata, **kwargs)
             return None, result
         except ToolExecutionError as exc:
             return exc, None
