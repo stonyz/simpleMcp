@@ -8,10 +8,50 @@ from app.db import get_db, get_db_context
 from app.db import crud
 from app.mcp.tenant_manager import tenant_manager
 from app.mcp.tool_registry import parse_tools_from_openapi
+from app import service_admin
 import logging
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+
+@router.get("/")
+def list_services(
+    tenant: str = Query(..., min_length=1, max_length=63),
+    org: Optional[str] = Query(None), app: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, max_length=256),
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+):
+    with get_db_context() as db:
+        return service_admin.list_documents(db, tenant_manager, tenant, org, app, q, page, page_size)
+
+
+@router.get("/detail")
+def service_detail(tenant: str = Query(..., min_length=1, max_length=63), org: str = Query(...),
+                   app: str = Query(...), fileId: str = Query(...)):
+    with get_db_context() as db:
+        return service_admin.document_view(service_admin.find_document(db, tenant, org, app, fileId), tenant_manager, True)
+
+
+@router.post("/preview")
+def preview_service(body: service_admin.ServiceInput, tenant: str = Query(..., min_length=1, max_length=63)):
+    with get_db_context() as db:
+        preview, _ = service_admin.preview_document(db, tenant_manager, tenant, body)
+        return preview
+
+
+@router.post("/save")
+async def save_service(body: service_admin.ServiceInput, tenant: str = Query(..., min_length=1, max_length=63)):
+    with get_db_context() as db:
+        preview, data = service_admin.preview_document(db, tenant_manager, tenant, body)
+        if preview["conflicts"]:
+            raise HTTPException(409, detail="工具名称与其他服务冲突，请调整 operationId 后重试")
+    auth = service_admin.authorization_value(body)
+    # Preserve stored auth in the live registry as well as in SQLite on update.
+    if body.auth_action == "keep" and body.fileId:
+        with get_db_context() as db:
+            auth = service_admin.find_document(db, tenant, body.org, body.app, body.fileId).auth
+    return await _register_openapi_logic(tenant, body.org, body.app, body.fileId, body.fileName, data, auth)
 
 async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: Optional[str], fileName: str, openapi_data: dict, auth: Optional[str] = None):
     """
@@ -124,8 +164,8 @@ async def delete_openapi(
     fileId: str = Query(...)
 ):
     """
-    按 orgid + appid + title（可选 version）删除：
-    1) 反注册所有由该 OpenAPI 生成的 functions
+    按 tenant + orgid + appid + fileId 删除：
+    1) 立即从当前进程的内存注册表卸载仍归该文档所有的 functions
     2) 从数据库删除对应 OpenAPI 记录
     """
     # 使用现有的数据库操作方式
@@ -134,23 +174,9 @@ async def delete_openapi(
         if not obj:
             raise HTTPException(status_code=404, detail="OpenAPI record not found")
 
-        openapi_data= yaml.safe_load(obj.openapi_yaml)
-   
-        # 收集所有 function 名称
-        names = []
-        for path, methods in (openapi_data.get("paths") or {}).items():
-            for method, op in (methods or {}).items():
-                if method.lower() not in ("get", "post", "put", "patch", "delete", "head", "options"):
-                    continue
-                fname = op.get("operationId")
-                if not fname:
-                    # 回退规则
-                    clean = path.strip("/").replace("/", "_").replace("{", "").replace("}", "")
-                    fname = f"{method.lower()}_{clean or 'root'}"
-                names.append(fname)
-
-        # 从注册表卸载
-        tenant_manager.unregister_tools_by_origin(tenant, orgid, appid, names)
+        # Remove by actual document ownership, even if the stored YAML is broken.
+        registry = tenant_manager.get_tenant_registry(tenant)
+        names = registry.replace_file_functions(orgid, appid, fileId, [])
 
         # 从数据库删除
         count = crud.delete_openapi_file(db, tenant, orgid, appid, fileId)

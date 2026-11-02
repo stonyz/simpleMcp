@@ -58,6 +58,9 @@ def register_routers():
 
 register_routers()
 
+from app.admin_hosting import mount_admin
+mount_admin(app)
+
 @app.on_event("startup")
 async def on_startup():
     """

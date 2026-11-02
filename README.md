@@ -12,6 +12,74 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 - Containerized deployment with Docker and docker-compose
 - **NEW**: Client-provided authentication for upstream services
 - Multi-tenant isolation with orgId/appId
+- Built-in React service administration UI at `/admin/`
+
+## Web 服务管理台
+
+浏览器访问 `http://localhost:8000/admin/`，输入 `.env` 中 `AUTH_TOKENS`
+配置的一个 Token 和目标 Tenant。管理台使用 React、TypeScript、Vite、Ant Design
+和本地加载的 Monaco 编辑器，不依赖外部 CDN。
+
+支持服务分页查询、按组织/应用筛选、搜索、YAML/JSON 上传或粘贴、工具变更预览、
+注册、覆盖更新、删除、文档导出，以及复制 MCP 接入配置。更新锁定
+`tenant + org + app + fileId`，保存前检查重名工具；其他文档有同名工具时拒绝保存，
+现有 `/services/register` 的兼容行为保持不变。详情区分文档声明工具和当前注册表生效工具，
+不检测上游健康状态。文档导出为数据库保存的 YAML，不保留原始文件的排版和注释。
+
+管理台沿用服务端共享 Token：持有有效 Token 的管理员可切换 Tenant，
+Tenant/Org/App 是数据范围筛选，不是用户级权限体系。Token 仅保存在页面内存中，
+刷新或退出后需要重新输入；接入示例使用 `YOUR_TOKEN` 占位符。
+上游 `auth` 配置不回显，编辑时可保留、替换或清除。HTTP 请求日志用日志级别控制：
+`LOG_LEVEL=INFO` 记录方法、路径、状态和耗时；`.env` 设置 `LOG_LEVEL=DEBUG`
+并重启后，会额外在 `logs/request-YYYY-MM-DD.log` 中完整记录请求 URL、请求头、
+请求正文、响应头和文本响应正文（包括认证信息）。SSE 保持流式传输，不收集事件正文；
+二进制或压缩响应只记录类型提示，避免将图片等强行解码成文本。
+
+服务编辑页的“授权设置”按授权方式提供独立字段，无需手写 JSON：
+
+| 授权方式 | 配置字段 | 调用行为 |
+| --- | --- | --- |
+| 无需认证 | 无 | 清除服务默认凭据；调用方仍可提供 `auth` |
+| Bearer Token | `access_token` | 自动添加 `Authorization: Bearer …` |
+| HTTP Basic | `username`、`password` | 自动生成 Basic Authorization 请求头 |
+| OAuth2 Client Credentials | `token_url`、`client_id`、`client_secret`，可选 `scopes` | 获取并缓存访问令牌后调用业务 API |
+
+已有服务默认选择“保留现有授权”，详情仅展示授权类型，不回显用户名、令牌、密钥等凭据。
+切换授权类型需填写完整的新凭据，隐藏类型的字段不会随请求发送。OAuth2 的令牌地址必须为
+HTTP/HTTPS 地址，scopes 可用回车、空格或逗号分隔。授权字段变化后必须重新校验预览才能保存。
+管理接口通过可选 `auth_type`（`bearer`、`basic`、`oauth2`）进行对应字段校验；原有不传类型的
+JSON `auth` 接口仍兼容。
+
+Docker 构建会自动构建前端，仍通过一个镜像、一个 `8000` 端口提供页面和 API：
+
+```bash
+docker compose up -d --build
+```
+
+本地运行生产构建（Node.js 22.12+ 或 24 LTS）：
+
+```bash
+cd web
+npm ci
+npm run build
+cd ..
+poetry run uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+前端开发时，在后端已运行于 `127.0.0.1:8000` 的情况下，在 `web/` 执行
+`npm run dev`，访问 Vite 输出地址下的 `/admin/`。Vite 将 `/services` 请求代理到后端。
+后端启动时挂载 `web/dist`，首次构建后需重启后端。
+
+浏览器回归使用独立临时 SQLite 数据库及专用测试 Token，不读取已有服务数据：
+
+```bash
+cd web
+npx playwright install chromium
+npm run build
+npm run test:e2e
+```
+
+也可以设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 使用本机 Chrome。
 
 ## Table of Contents
 

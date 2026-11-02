@@ -41,7 +41,10 @@ class MCPRegistry:
                 del self._name_index[name]
 
     def replace_file_functions(self, orgid: str, appid: str, fileId: str, tools: List[dict]):
-        """Replace one document's tools atomically with respect to registry readers."""
+        """Replace immediately under the reader lock; return removed tool names.
+
+        Passing [] unloads the document without touching names another file owns.
+        """
         with self._lock:
             keys = [key for key, item in self._registry.items()
                     if key[0] == orgid and key[1] == appid
@@ -52,6 +55,7 @@ class MCPRegistry:
                 self.register_function(
                     tool["name"], tool["metadata"], tool["schema"], orgid, appid,
                 )
+            return [key[2] for key in keys]
 
     def unregister_function(self, name: str, orgid: Optional[str] = None, appid: Optional[str] = None):
         with self._lock:

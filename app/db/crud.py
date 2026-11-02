@@ -19,6 +19,9 @@ def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId
     existed = db.execute(stmt).scalars().first()
     if existed:
         existed.openapi_yaml = yaml.dump(openapi_data, allow_unicode=True)
+        existed.fileName = fileName
+        existed.title = title
+        existed.version = version
         # Update auth if provided
         if auth is not None:
             existed.auth = auth

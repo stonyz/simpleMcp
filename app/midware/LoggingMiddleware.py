@@ -1,51 +1,53 @@
+from time import monotonic
+import logging
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from app.logger import request_logger
+
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # 获取请求体（注意：如果请求体比较大或者需要重复读取，需要额外处理）
-        body_bytes = await request.body()
-        body_str = body_bytes.decode('utf-8') if body_bytes else ""
-        if request.method in ["POST", "PUT", "PATCH"]:
-            content_type = request.headers.get("content-type", "")
-            
-            if "multipart/form-data" in content_type:  # 处理 form-data
-                form = await request.form()
-                body_str = {key: value for key, value in form.items()}  # 转成字典
-            elif "application/json" in content_type:  # 处理 JSON
-                body_str = await request.json()
-            else:
-                req_body_bytes = await request.body()
-                body_str = req_body_bytes.decode('utf-8') if req_body_bytes else ""
-
-        query_str = f"?{request.query_params}" if request.query_params else ""
-        
-        # 获取请求头
-        headers_dict = dict(request.headers)
-        
-        # 组合日志内容
-        log_msg = f"{request.method} {request.url.path}{query_str}"
-
-        # request_logger.info(log_msg)
-
-
+        started = monotonic()
+        debug = request_logger.isEnabledFor(logging.DEBUG)
+        if debug:
+            # body() caches the bytes for downstream handlers; parsing form()
+            # here would consume uploaded files before the route sees them.
+            request_body = await request.body()
+            request_logger.debug("%s %s\nHeaders: %s\nReq: %s", request.method, request.url,
+                                 dict(request.headers), request_body.decode("utf-8", errors="replace"))
         response = await call_next(request)
-        if "text/event-stream" in response.headers.get("Content-Type", ""):
-            # 对于 SSE，不处理响应体
-            request_logger.info(f"{log_msg} {response.status_code} (SSE Connection)\nHeaders: {headers_dict}")
+        request_logger.info("%s %s %s %.1fms", request.method, request.url.path,
+                            response.status_code, (monotonic() - started) * 1000)
+        if not debug:
             return response
 
-        response_body = b""
-        async for chunk in response.body_iterator:
-            response_body += chunk
+        content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+        textual = (content_type.startswith("text/") or content_type in
+                   ("application/json", "application/javascript", "application/xml", "application/yaml")
+                   or content_type.endswith(("+json", "+xml")))
+        encoded = response.headers.get("content-encoding", "identity") != "identity"
+        if content_type == "text/event-stream" or not textual or encoded:
+            request_logger.debug("%s %s %s\nResponse headers: %s\nResp: [%s]", request.method,
+                                 request.url, response.status_code, dict(response.headers),
+                                 "SSE stream" if content_type == "text/event-stream" else "binary/encoded body")
+            return response
 
-        # 重新创建 Response，确保响应内容仍能正确返回
-        from starlette.responses import Response
-        response = Response(content=response_body, status_code=response.status_code, headers=dict(response.headers))
+        # Observe chunks as they are delivered. Do not rebuild the Response:
+        # that would risk losing duplicate headers, cookies or background tasks.
+        original_iterator = response.body_iterator
 
-        # 解析并记录响应体
-        response_text = response_body.decode("utf-8") if response_body else ""
-        request_logger.info(f"{log_msg} {response.status_code}\nHeaders: {headers_dict}\nReq:     `{body_str}\nResp:    `{response_text}\n")
+        async def log_response():
+            chunks = []
+            try:
+                async for chunk in original_iterator:
+                    chunks.append(chunk)
+                    yield chunk
+            finally:
+                request_logger.debug("%s %s %s\nResponse headers: %s\nResp: %s", request.method,
+                                     request.url, response.status_code, dict(response.headers),
+                                     b"".join(chunks).decode("utf-8", errors="replace"))
 
+        response.body_iterator = log_response()
         return response

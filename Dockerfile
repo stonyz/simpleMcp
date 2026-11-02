@@ -1,3 +1,10 @@
+FROM node:24-alpine AS web-build
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -16,6 +23,7 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry install --only main --no-root --no-interaction --no-ansi
 
 COPY app/ ./app/
+COPY --from=web-build /web/dist/ ./web/dist/
 RUN mkdir -p /app/logs /app/data
 
 EXPOSE 8000

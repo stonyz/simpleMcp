@@ -69,3 +69,9 @@ venv.bak/
 *.pid
 __pypackages__/
 sample_yamls
+
+# Web management UI
+web/node_modules/
+web/test-results/
+web/playwright-report/
+*.tsbuildinfo

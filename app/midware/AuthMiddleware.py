@@ -10,7 +10,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Skip authentication for certain paths (e.g., health checks, docs)
         skip_paths = ["/docs", "/redoc", "/openapi.json"]
-        if request.url.path in skip_paths:
+        if request.url.path in skip_paths or request.url.path == "/admin" or request.url.path.startswith("/admin/"):
             return await call_next(request)
         
         # Get the Authorization header
