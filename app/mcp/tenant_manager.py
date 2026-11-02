@@ -40,12 +40,17 @@ class TenantManager:
         
         # Register each tool with the tenant registry
         tenant_registry = self.get_tenant_registry(tenant)
-        registered_names = []
         for tool_data in tools_data:
-            # Add auth data to tool metadata if provided
             if auth is not None:
                 tool_data["metadata"]["auth"] = auth
-                
+
+        if fileId is not None:
+            tenant_registry.replace_file_functions(orgid, appid, fileId, tools_data)
+            return [tool_data["name"] for tool_data in tools_data]
+
+        # Internal callers without document identity retain additive registration.
+        registered_names = []
+        for tool_data in tools_data:
             tenant_registry.register_function(
                 tool_data["name"],
                 tool_data["metadata"],

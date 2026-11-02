@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, Query, Form, Depends, HTTPException
 from fastapi import Body
 from sqlalchemy.orm import Session
 from typing import Optional
+from uuid import uuid4
 import yaml, json
 from app.db import get_db, get_db_context
 from app.db import crud
@@ -12,13 +13,15 @@ import logging
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: str, fileName: str, openapi_data: dict, auth: Optional[str] = None):
+async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: Optional[str], fileName: str, openapi_data: dict, auth: Optional[str] = None):
     """
     公共的 OpenAPI 注册逻辑
     """
     # 基本校验
     if not isinstance(openapi_data, dict) or "paths" not in openapi_data:
         raise HTTPException(status_code=400, detail="OpenAPI content missing 'paths'")
+
+    fileId = fileId or uuid4().hex
 
     # Validate all operations before persisting or changing the live registry.
     try:
@@ -48,7 +51,7 @@ async def register_openapi(
     tenant: str = Query(..., alias="tenant"),
     org: str = Form(...),
     app: str = Form(...),
-    fileId: str = Form(...),
+    fileId: Optional[str] = Form(None),
     fileName: str = Form(...),
     auth: Optional[str] = Form(None),
     file: Optional[UploadFile] = None,
@@ -81,8 +84,8 @@ async def register_openapi_json(
     auth = request_data.get("auth")  # Extract auth from request data
     
     # 参数验证
-    if not all([org, app, fileId, fileName]):
-        raise HTTPException(status_code=400, detail="Missing required fields: org, app, fileId, fileName")
+    if not all([org, app, fileName]):
+        raise HTTPException(status_code=400, detail="Missing required fields: org, app, fileName")
     
     if not yaml_content:
         raise HTTPException(status_code=400, detail="yaml_content is required")

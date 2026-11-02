@@ -154,9 +154,15 @@ MCP Server supports multiple authentication mechanisms for both client access to
 #### Services
 
 - `POST /services/register` - Register an OpenAPI specification
-  - Form parameters: `org`, `app`, `fileId`, `fileName`, `file` or `yaml_content`
+  - Query parameter: `tenant` (required)
+  - JSON body: `org`, `app`, `fileName`, `yaml_content`; optional `fileId`, `auth`
+- `POST /services/register-form` - Register using form fields or a file upload
+  - Query parameter: `tenant` (required)
+  - Form fields: `org`, `app`, `fileName`, `file` or `yaml_content`; optional `fileId`, `auth`
+  - Both registration endpoints generate and return `fileId` when omitted or empty. Save this ID and send it on subsequent updates or deletion. Each registration without an ID creates a new document.
+  - Supplying the same `tenant`, `org`, `app`, and `fileId` updates that document (`updated: true`) and replaces its tools, removing operations deleted or renamed in the new specification. Other documents' tools are preserved unless the new specification registers the same tool name in the same org/app, which retains the existing overwrite behavior.
 - `DELETE /services/delete` - Delete an OpenAPI specification
-  - Query parameters: `org`, `app`, `fileId`
+  - Query parameters: `tenant`, `org`, `app`, `fileId` (all required)
 
 #### MCP
 

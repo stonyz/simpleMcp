@@ -4,7 +4,6 @@ from app.db.models import OpenAPIFile
 import json
 import yaml
 from typing import List, Optional, Tuple
-# FIXME save tenant to database
 def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId: str, fileName: str, openapi_data: dict, auth: Optional[str] = None):
     info = openapi_data.get("info", {})
     title = info.get("title", "untitled")
@@ -12,6 +11,7 @@ def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId
 
     # 先查是否存在
     stmt = select(OpenAPIFile).where(
+        OpenAPIFile.tenant == tenant,
         OpenAPIFile.orgid == orgid,
         OpenAPIFile.appid == appid,
         OpenAPIFile.fileId == fileId
