@@ -185,6 +185,9 @@ async def mcp_jsonrpc(
                     {"type": "text", "text": text_payload}
                 ]
             }
+            # 对象结果同时返回结构化数据，供声明了 outputSchema 的客户端校验。
+            if isinstance(result, dict):
+                response_content["structuredContent"] = result
             if meta:
                 response_content["meta"] = meta
 
