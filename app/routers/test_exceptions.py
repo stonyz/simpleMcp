@@ -1,6 +1,5 @@
 """
-测试异常处理器的路由
-用于验证全局异常处理是否正常工作
+Routes for verifying the global exception handlers.
 """
 from fastapi import APIRouter, HTTPException
 import logging
@@ -10,24 +9,24 @@ log = logging.getLogger(__name__)
 
 @router.get("/test-unhandled-exception")
 async def test_unhandled_exception():
-    """测试未处理的异常"""
+    """Trigger an unhandled exception to verify global error handling."""
     # 故意抛出一个异常，测试全局异常处理器
     raise ValueError("This is a test unhandled exception")
 
 @router.get("/test-http-exception")
 async def test_http_exception():
-    """测试HTTP异常"""
+    """Trigger an HTTP exception to verify error handling."""
     raise HTTPException(status_code=400, detail="This is a test HTTP exception")
 
 @router.get("/test-division-by-zero")
 async def test_division_by_zero():
-    """测试除零异常"""
+    """Trigger a division-by-zero exception to verify error handling."""
     result = 1 / 0  # 这会抛出ZeroDivisionError
     return {"result": result}
 
 @router.get("/test-attribute-error")
 async def test_attribute_error():
-    """测试属性错误"""
+    """Trigger an attribute error to verify error handling."""
     obj = None
     obj.nonexistent_method()  # 这会抛出AttributeError
     return {"result": "should not reach here"}

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, UploadFile, Query, Form, Depends, HTTPException
+from app.errors import ApiError
+from fastapi import APIRouter, UploadFile, Query, Form, Depends
 from fastapi import Body, Request
 from app.access import authorize_request, check_identifier
 from sqlalchemy.orm import Session
@@ -57,7 +58,7 @@ async def save_service(body: service_admin.ServiceInput, tenant: str = Query(...
     with get_db_context() as db:
         preview, data = service_admin.preview_document(db, tenant_manager, tenant, body)
         if preview["conflicts"]:
-            raise HTTPException(409, detail="工具名称与其他服务冲突，请调整 operationId 后重试")
+            raise ApiError(409, "document_tool_conflict")
     auth = service_admin.authorization_value(body)
     # Preserve stored auth in the live registry as well as in SQLite on update.
     if body.auth_action == "keep" and body.fileId:
@@ -67,21 +68,22 @@ async def save_service(body: service_admin.ServiceInput, tenant: str = Query(...
 
 async def _register_openapi_logic(tenant: str, org: str, app: str, fileId: Optional[str], fileName: str, openapi_data: dict, auth: Optional[str] = None):
     """
-    公共的 OpenAPI 注册逻辑
+    Shared OpenAPI registration logic.
     """
     for field, value, limit in [('tenant', tenant, 63), ('org', org, 64), ('app', app, 64)]:
         check_identifier(value, field, limit)
     # 基本校验
     if not isinstance(openapi_data, dict) or "paths" not in openapi_data:
-        raise HTTPException(status_code=400, detail="OpenAPI content missing 'paths'")
+        raise ApiError(400, "document_paths_required")
 
     fileId = fileId or uuid4().hex
 
     # Validate all operations before persisting or changing the live registry.
     try:
+        service_admin.validate_document_timeouts(openapi_data)
         parse_tools_from_openapi(org, app, openapi_data, fileId, fileName)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError) as exc:
+        raise ApiError(400, "document_invalid") from exc
 
     # 使用现有的数据库操作方式
     with get_db_context() as db:
@@ -117,7 +119,7 @@ async def register_openapi(
     elif yaml_content:
         openapi_data = parse_yaml_string(yaml_content)
     else:
-        raise HTTPException(status_code=400, detail="No file or YAML string provided")
+        raise ApiError(400, "document_content_required")
 
     return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data, auth)
 
@@ -127,7 +129,7 @@ async def register_openapi_json(
     request_data: dict = Body(...)
 ):
     """
-    通过 JSON 注册 OpenAPI，功能与 /register 完全一样
+    Register an OpenAPI document supplied as a JSON request body.
     """
     # 从 JSON 中提取参数
     org = request_data.get("org")
@@ -139,16 +141,16 @@ async def register_openapi_json(
     
     # 参数验证
     if not all([org, app, fileName]):
-        raise HTTPException(status_code=400, detail="Missing required fields: org, app, fileName")
+        raise ApiError(400, "document_fields_required")
     
     if not yaml_content:
-        raise HTTPException(status_code=400, detail="yaml_content is required")
+        raise ApiError(400, "document_yaml_required")
 
     openapi_data = parse_yaml_string(yaml_content)
     return await _register_openapi_logic(tenant, org, app, fileId, fileName, openapi_data, auth)
 
 def parse_file_content(filename: str, content: bytes):
-    """根据文件后缀解析内容"""
+    """Parse content using the file extension."""
     try:
         if filename.endswith((".yaml", ".yml")):
             return yaml.safe_load(content)
@@ -160,14 +162,14 @@ def parse_file_content(filename: str, content: bytes):
                 return yaml.safe_load(content)
             except yaml.YAMLError:
                 return json.loads(content)
-    except (yaml.YAMLError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid file content: {e}")
+    except (yaml.YAMLError, ValueError, TypeError, AttributeError, RecursionError) as e:
+        raise ApiError(400, "document_file_invalid") from e
 
 def parse_yaml_string(yaml_str: str):
     try:
         return yaml.safe_load(yaml_str)
-    except yaml.YAMLError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid YAML string: {e}")
+    except (yaml.YAMLError, ValueError, TypeError, AttributeError, RecursionError) as e:
+        raise ApiError(400, "document_yaml_invalid") from e
 
 
 @router.delete("/delete")
@@ -178,15 +180,14 @@ async def delete_openapi(
     fileId: str = Query(...)
 ):
     """
-    按 tenant + orgid + appid + fileId 删除：
-    1) 立即从当前进程的内存注册表卸载仍归该文档所有的 functions
-    2) 从数据库删除对应 OpenAPI 记录
+    Delete a document by tenant, organization, application and file ID.
+    Unregister its functions from the current process and remove its database record.
     """
     # 使用现有的数据库操作方式
     with get_db_context() as db:
         obj = crud.get_one_openapi(db, tenant, orgid, appid, fileId)
         if not obj:
-            raise HTTPException(status_code=404, detail="OpenAPI record not found")
+            raise ApiError(404, "openapi_record_not_found")
 
         # Remove by actual document ownership, even if the stored YAML is broken.
         registry = tenant_manager.get_tenant_registry(tenant)

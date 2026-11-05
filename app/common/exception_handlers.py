@@ -2,6 +2,7 @@
 全局异常处理器模块
 提供统一的异常处理和错误响应格式
 """
+from app.errors import CATALOG, message
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -28,7 +29,9 @@ def register_exception_handlers(app):
             content={
                 "error": {
                     "type": "InternalServerError",
-                    "message": "An unexpected error occurred",
+                    "message": message("internal_error"),
+                    "code": "internal_error",
+                    "params": {},
                     "details": "See server logs using the request ID",
                     "path": request.url.path,
                     "method": request.method
@@ -43,10 +46,13 @@ def register_exception_handlers(app):
         
         return JSONResponse(
             status_code=exc.status_code,
+            headers=exc.headers,
             content={
                 "error": {
                     "type": "HTTPException",
                     "message": exc.detail,
+                    "code": getattr(exc, "code", "http_error"),
+                    "params": getattr(exc, "params", {}),
                     "status_code": exc.status_code,
                     "path": request.url.path,
                     "method": request.method
@@ -59,8 +65,24 @@ def register_exception_handlers(app):
         """请求验证异常处理器"""
         # Pydantic includes raw input and exception objects in its diagnostics.
         # Neither belongs in credential-bearing API responses or logs.
-        safe_errors = [{key: error[key] for key in ("type", "loc", "msg") if key in error}
-                       for error in exc.errors()]
+        safe_errors = []
+        for error in exc.errors():
+            diagnostic = {key: error[key] for key in ("type", "loc", "msg") if key in error}
+            code = error.get("type")
+            if code in CATALOG:
+                params = {}
+                # Only this validator has formatting context. Its field name
+                # and numeric bound are controlled by our model definitions.
+                # Never forward arbitrary Pydantic context or raw input.
+                if code == "identifier_invalid":
+                    context = error.get("ctx") or {}
+                    if context.get("field") in ("tenant", "org", "app", "id"):
+                        params["field"] = context["field"]
+                    limit = context.get("limit")
+                    if type(limit) is int and 1 <= limit <= 256:
+                        params["limit"] = limit
+                diagnostic.update(code=code, params=params)
+            safe_errors.append(diagnostic)
         log.warning("Validation error in %s %s: %s", request.method, request.url.path,
                     [{"type": error.get("type"), "loc": error.get("loc")} for error in safe_errors])
         
@@ -69,7 +91,9 @@ def register_exception_handlers(app):
             content={
                 "error": {
                     "type": "ValidationError",
-                    "message": "Request validation failed",
+                    "message": message("validation_error"),
+                    "code": "validation_error",
+                    "params": {},
                     "details": safe_errors,
                     "path": request.url.path,
                     "method": request.method

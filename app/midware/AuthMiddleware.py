@@ -1,4 +1,5 @@
-from fastapi import Request, HTTPException
+from app.errors import message
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.concurrency import run_in_threadpool
@@ -37,7 +38,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             log.warning(f"Unauthorized access attempt to {request.url.path} - Missing token")
             return JSONResponse(
                 status_code=401,
-                content={"error": "Missing token. Provide token in Authorization header or as query parameter 'token'"}
+                content={"error": message("missing_token"), "code": "missing_token", "params": {}}
             )
         
         # Check if the token is in our valid tokens list
@@ -49,7 +50,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             log.warning(f"Unauthorized access attempt to {request.url.path} - Invalid token")
             return JSONResponse(
                 status_code=401,
-                content={"error": "Invalid or unauthorized token"}
+                content={"error": message("invalid_token"), "code": "invalid_token", "params": {}}
             )
         
         request.state.mcp_policy = policy

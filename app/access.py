@@ -1,9 +1,11 @@
 """Scope identities and authorization shared by management and MCP routes."""
+from app.errors import ApiError, message
+from pydantic_core import PydanticCustomError
 from typing import Literal, Optional
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.config import settings
 
@@ -11,7 +13,7 @@ from app.config import settings
 def validate_identifier(value, field, limit=64):
     if (not isinstance(value, str) or not value or len(value) > limit or (field == 'tenant' and value in ('.', '..'))
             or any(c.isspace() or ord(c) < 32 or ord(c) == 127 or c in '/\\?#' for c in value)):
-        raise ValueError(f'{field} must be a nonblank identifier of at most {limit} characters without whitespace or /\\?#')
+        raise PydanticCustomError('identifier_invalid', message('identifier_invalid', field=field, limit=limit), {'field': field, 'limit': limit})
     return value
 
 
@@ -19,7 +21,7 @@ def check_identifier(value, field, limit=64):
     try:
         return validate_identifier(value, field, limit)
     except ValueError as exc:
-        raise HTTPException(422, detail=str(exc)) from exc
+        raise ApiError(422, "identifier_invalid", field=field, limit=limit) from exc
 
 
 class AccessRule(BaseModel):
@@ -41,16 +43,16 @@ class AccessRule(BaseModel):
         if value is not None:
             for identity in value:
                 if not identity or len(identity) > 64:
-                    raise ValueError('Invalid service fileId')
+                    raise PydanticCustomError("service_id_invalid", message("service_id_invalid"))
             return sorted(set(value))
         return value
 
     @model_validator(mode='after')
     def hierarchy(self):
         if self.app is not None and self.org is None:
-            raise ValueError('An app scope requires an org')
+            raise PydanticCustomError("app_scope_org_required", message("app_scope_org_required"))
         if self.services is not None and self.app is None:
-            raise ValueError('Service selection requires org and app')
+            raise PydanticCustomError("service_scope_required", message("service_scope_required"))
         return self
 
     def permits(self, tenant, org, app, file_id, operation):
@@ -82,16 +84,16 @@ async def authorize_request(request: Request):
     path = request.scope['route'].path
     is_mcp = path in ('/mcp', '/mcp/list', '/mcp/call', '/functions/')
     if is_mcp and getattr(request.state, 'is_admin', False) and not settings.ADMIN_MCP_ENABLED:
-        raise HTTPException(403, detail='Administrator tokens are restricted to management. Use a database MCP credential or enable ADMIN_MCP_ENABLED.')
+        raise ApiError(403, "admin_mcp_restricted")
     policy = getattr(request.state, 'mcp_policy', None)
     tenant = request.query_params.get('tenant')
     if tenant is not None:
         check_identifier(tenant, 'tenant', 63)
     if policy is not None:
         if not is_mcp:
-            raise HTTPException(403, detail='MCP credentials cannot access management APIs')
+            raise ApiError(403, "management_access_denied")
         if not any(rule.tenant == tenant for rule in policy.rules):
-            raise HTTPException(403, detail='Token does not permit this tenant')
+            raise ApiError(403, "tenant_access_denied")
 
     org = app = None
     if path.startswith('/services'):

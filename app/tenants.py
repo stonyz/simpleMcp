@@ -1,6 +1,7 @@
 """Persistent tenant workspaces and registration of legacy resource owners."""
+from app.errors import ApiError, message
+from pydantic_core import PydanticCustomError
 from datetime import datetime, timezone
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select, func
 
@@ -21,7 +22,7 @@ class TenantUpdate(BaseModel):
     @classmethod
     def nonblank(cls, value):
         if not value.strip():
-            raise ValueError('Name must not be blank')
+            raise PydanticCustomError("name_blank", message("name_blank"))
         return value.strip()
 
 
@@ -54,7 +55,7 @@ def sync_tenants(db):
 def get_tenant(db, identity):
     row = db.get(Tenant, identity)
     if row is None:
-        raise HTTPException(404, detail='租户不存在，请返回租户入口重新选择')
+        raise ApiError(404, "tenant_not_found")
     return row
 
 

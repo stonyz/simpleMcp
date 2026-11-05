@@ -1,7 +1,10 @@
+import { language } from './i18n';
+import { ApiError } from './apiErrors';
 export interface Service {
   tenant: string; org: string; app: string; fileId: string; fileName: string;
   title: string; version: string; created_at: string; updated_at: string;
   tool_count: number; active_tool_count: number; auth_configured: boolean; error: string | null;
+  error_code?: string; error_params?: Record<string, unknown>;
   auth_type?: 'none' | 'bearer' | 'basic' | 'oauth2' | 'unknown';
 }
 export interface Tool {
@@ -41,22 +44,32 @@ export function createApi(token: string, tenant?: string, unauthorized?: () => v
   async function request<T>(path: string, query: Record<string, string | number> = {}, body?: unknown,
                             method = 'GET', signal?: AbortSignal): Promise<T> {
     const params = new URLSearchParams({ ...Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)])), ...(tenant === undefined ? {} : { tenant }) });
-    const response = await fetch(`${path}?${params}`, {
-      method, signal, credentials: 'omit',
-      headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${path}?${params}`, {
+        method, signal, credentials: 'omit',
+        headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new ApiError('Network request failed', 'network_error');
+    }
     if (!response.ok) {
       if (response.status === 401) {
         unauthorized?.();
-        throw new Error('Token 无效或已失效');
+        throw new ApiError('Your token is invalid or expired', 'invalid_token');
       }
-      const error = await response.json().catch(() => ({}));
-      const detail = error.detail ?? error.error?.message;
-      const diagnostics = error.error?.details ?? error.detail;
-      const fields = Array.isArray(diagnostics) ? diagnostics.map((item: { loc?: string[]; msg?: string }) =>
-        `${item.loc?.slice(1).join('.') || '输入'}: ${item.msg || '格式错误'}`).join('；') : '';
-      throw new Error(fields || (typeof detail === 'string' ? detail : `请求失败（${response.status}），请检查输入或重试`));
+      const body = await response.json().catch(() => ({}));
+      const envelope = body.error && typeof body.error === 'object' ? body.error : {};
+      const detail = body.detail ?? envelope.message ?? (typeof body.error === 'string' ? body.error : undefined);
+      const diagnostics = envelope.details ?? body.detail;
+      throw new ApiError(
+        typeof detail === 'string' ? detail : `Request failed (${response.status})`,
+        envelope.code || body.code || (typeof detail === 'string' ? undefined : 'request_failed'),
+        envelope.params || body.params || { status: response.status },
+        Array.isArray(diagnostics) ? diagnostics : [],
+      );
     }
     return response.json();
   }
@@ -84,7 +97,7 @@ export function createApi(token: string, tenant?: string, unauthorized?: () => v
   };
 }
 
-export const time = (value: string) => value ? new Date(value.endsWith('Z') ? value : `${value}Z`).toLocaleString('zh-CN', { hour12: false }) : '—';
+export const time = (value: string) => value ? new Date(value.endsWith('Z') ? value : `${value}Z`).toLocaleString(language() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false }) : '—';
 export const serviceKey = (row: Service) => JSON.stringify([row.tenant, row.org, row.app, row.fileId]);
 export function downloadDocument(detail: Detail) {
   const blob = new Blob([detail.document], { type: 'application/yaml;charset=utf-8' });

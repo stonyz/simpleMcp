@@ -1,0 +1,250 @@
+{
+  "internal_error": {
+    "en": "An unexpected error occurred",
+    "zh": "发生意外错误"
+  },
+  "http_error": {
+    "en": "Request failed",
+    "zh": "请求失败"
+  },
+  "validation_error": {
+    "en": "Request validation failed",
+    "zh": "请求验证失败"
+  },
+  "invalid_value": {
+    "en": "Invalid value",
+    "zh": "值无效"
+  },
+  "network_error": {
+    "en": "Network request failed",
+    "zh": "网络请求失败"
+  },
+  "request_failed": {
+    "en": "Request failed ({status})",
+    "zh": "请求失败（{status}）"
+  },
+  "missing_token": {
+    "en": "Missing token. Provide token in Authorization header or as query parameter 'token'",
+    "zh": "缺少 Token，请通过 Authorization 请求头或 token 查询参数提供"
+  },
+  "invalid_token": {
+    "en": "Your token is invalid or expired",
+    "zh": "Token 无效或已失效"
+  },
+  "auth_json_object": {
+    "en": "Upstream authentication must be a JSON object",
+    "zh": "上游认证配置必须是 JSON 对象"
+  },
+  "auth_fields_mismatch": {
+    "en": "Authentication fields do not match the selected authorization type",
+    "zh": "认证字段与所选授权方式不匹配"
+  },
+  "auth_field_required": {
+    "en": "Provide a valid {field}",
+    "zh": "请填写有效的 {field}"
+  },
+  "auth_token_url_invalid": {
+    "en": "token_url must be a valid HTTP/HTTPS URL",
+    "zh": "token_url 必须是有效的 HTTP/HTTPS 地址"
+  },
+  "auth_scopes_invalid": {
+    "en": "scopes must be an array of permission scope strings",
+    "zh": "scopes 必须是权限范围字符串数组"
+  },
+  "document_paths_required": {
+    "en": "Document must contain a paths object",
+    "zh": "文档必须包含 paths 对象"
+  },
+  "document_openapi_version": {
+    "en": "Use an OpenAPI 3.x document",
+    "zh": "请使用 OpenAPI 3.x 文档"
+  },
+  "document_title_invalid": {
+    "en": "info.title must be a nonblank string",
+    "zh": "info.title 必须是非空字符串"
+  },
+  "document_version_invalid": {
+    "en": "info.version must be a string",
+    "zh": "info.version 必须是字符串"
+  },
+  "document_paths_invalid": {
+    "en": "Paths and methods must have valid formats",
+    "zh": "paths 中的路径及方法格式不正确"
+  },
+  "document_operation_object": {
+    "en": "{method} {path} must be an object",
+    "zh": "{method} {path} 必须是对象"
+  },
+  "document_operation_field_string": {
+    "en": "{method} {path}: {field} must be a string",
+    "zh": "{method} {path}: {field} 必须是字符串"
+  },
+  "document_operation_id_invalid": {
+    "en": "operationId must be a nonblank string",
+    "zh": "operationId 必须是非空字符串"
+  },
+  "document_duplicate_tools": {
+    "en": "Tool names must be unique within a document",
+    "zh": "同一文档内的工具名称不能重复"
+  },
+  "document_invalid": {
+    "en": "Invalid OpenAPI structure or YAML/JSON format",
+    "zh": "OpenAPI 文档结构或 YAML/JSON 格式不正确"
+  },
+  "stored_document_invalid": {
+    "en": "Stored document cannot be parsed. Edit it to repair it",
+    "zh": "已存文档无法解析，请编辑修复"
+  },
+  "document_not_found": {
+    "en": "Service document not found. Refresh the list",
+    "zh": "服务文档不存在，请刷新列表"
+  },
+  "document_tool_conflict": {
+    "en": "Tool names conflict with another service. Adjust operationId and retry",
+    "zh": "工具名称与其他服务冲突，请调整 operationId 后重试"
+  },
+  "document_content_required": {
+    "en": "No file or YAML string provided",
+    "zh": "未提供文件或 YAML 字符串"
+  },
+  "document_fields_required": {
+    "en": "Missing required fields: org, app, fileName",
+    "zh": "缺少必填字段：org、app、fileName"
+  },
+  "document_yaml_required": {
+    "en": "yaml_content is required",
+    "zh": "必须提供 yaml_content"
+  },
+  "document_file_invalid": {
+    "en": "Invalid file content",
+    "zh": "文件内容无效"
+  },
+  "document_yaml_invalid": {
+    "en": "Invalid YAML string",
+    "zh": "YAML 字符串无效"
+  },
+  "openapi_record_not_found": {
+    "en": "OpenAPI record not found",
+    "zh": "OpenAPI 记录不存在"
+  },
+  "identifier_invalid": {
+    "en": "{field} must be a nonblank identifier of at most {limit} characters without whitespace or /\\?#",
+    "zh": "{field} 必须是最多 {limit} 个字符的非空标识，不能包含空白或 /\\?#"
+  },
+  "name_blank": {
+    "en": "Name must not be blank",
+    "zh": "名称不能为空"
+  },
+  "value_blank": {
+    "en": "Value must not be blank",
+    "zh": "值不能为空"
+  },
+  "expiry_timezone_required": {
+    "en": "Expiry must include a timezone",
+    "zh": "到期时间必须包含时区"
+  },
+  "service_id_invalid": {
+    "en": "Invalid service fileId",
+    "zh": "服务 fileId 无效"
+  },
+  "app_scope_org_required": {
+    "en": "An app scope requires an org",
+    "zh": "应用范围必须指定组织"
+  },
+  "service_scope_required": {
+    "en": "Service selection requires org and app",
+    "zh": "选择服务必须指定组织和应用"
+  },
+  "admin_mcp_restricted": {
+    "en": "Administrator tokens are restricted to management. Use a database MCP credential or enable ADMIN_MCP_ENABLED.",
+    "zh": "管理员 Token 仅限管理接口。请使用数据库 MCP 凭证或启用 ADMIN_MCP_ENABLED。"
+  },
+  "management_access_denied": {
+    "en": "MCP credentials cannot access management APIs",
+    "zh": "MCP 凭证不能访问管理接口"
+  },
+  "tenant_access_denied": {
+    "en": "Token does not permit this tenant",
+    "zh": "Token 不允许访问此租户"
+  },
+  "tenant_not_found": {
+    "en": "Tenant not found. Return to the tenant portal and select a tenant",
+    "zh": "租户不存在，请返回租户入口重新选择"
+  },
+  "tenant_exists": {
+    "en": "Tenant identifier already exists",
+    "zh": "租户标识已存在"
+  },
+  "tenant_not_empty": {
+    "en": "Tenant still has services or access credentials. Remove them before deleting",
+    "zh": "租户仍有服务或访问凭证，请先清空后再删除"
+  },
+  "credential_not_found": {
+    "en": "Access credential not found",
+    "zh": "访问凭证不存在"
+  },
+  "credential_tenant_mismatch": {
+    "en": "Authorization rules must belong to the current tenant",
+    "zh": "授权规则必须属于当前租户"
+  },
+  "credential_service_not_found": {
+    "en": "Authorization rules reference missing services. Refresh the selection list",
+    "zh": "授权规则包含不存在的服务，请刷新候选列表"
+  },
+  "validation_missing": {
+    "en": "Field required",
+    "zh": "必填字段"
+  },
+  "validation_string_type": {
+    "en": "Input should be a valid string",
+    "zh": "请输入字符串"
+  },
+  "validation_int_parsing": {
+    "en": "Input should be a valid integer",
+    "zh": "请输入整数"
+  },
+  "validation_bool_parsing": {
+    "en": "Input should be a valid boolean",
+    "zh": "请输入布尔值"
+  },
+  "validation_value_error": {
+    "en": "Invalid value",
+    "zh": "值无效"
+  },
+  "validation_extra_forbidden": {
+    "en": "Extra inputs are not permitted",
+    "zh": "不允许额外字段"
+  },
+  "validation_literal_error": {
+    "en": "Select a valid option",
+    "zh": "请选择有效选项"
+  },
+  "validation_string_too_short": {
+    "en": "Value is too short",
+    "zh": "值过短"
+  },
+  "validation_string_too_long": {
+    "en": "Value is too long",
+    "zh": "值过长"
+  },
+  "validation_too_short": {
+    "en": "Too few items",
+    "zh": "项目数量过少"
+  },
+  "validation_too_long": {
+    "en": "Too many items",
+    "zh": "项目数量过多"
+  },
+  "validation_greater_than_equal": {
+    "en": "Value is below the minimum",
+    "zh": "值低于最小值"
+  },
+  "validation_less_than_equal": {
+    "en": "Value exceeds the maximum",
+    "zh": "值超过最大值"
+  },
+  "document_timeout_invalid": {
+    "en": "{method} {path}: x-request-timeout-seconds must be a finite positive number",
+    "zh": "{method} {path}: x-request-timeout-seconds 必须是有限正数"
+  }
+}

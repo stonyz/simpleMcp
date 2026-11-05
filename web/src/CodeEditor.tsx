@@ -1,3 +1,4 @@
+import { t, useLanguage } from './i18n';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
@@ -11,9 +12,10 @@ loader.config({ monaco });
 export default function CodeEditor({ value, onChange, readOnly = false }: {
   value: string; onChange?: (value: string) => void; readOnly?: boolean;
 }) {
+  useLanguage();
   return <Editor height="420px" language={value.trimStart().startsWith('{') ? 'json' : 'yaml'}
     value={value} onChange={v => onChange?.(v || '')}
     options={{ readOnly, minimap: { enabled: false }, fontSize: 13, wordWrap: 'on',
       scrollBeyondLastLine: false, automaticLayout: true, tabSize: 2,
-      ariaLabel: 'OpenAPI 代码编辑器', padding: { top: 14 } }} />;
+      ariaLabel: t("OpenAPI 代码编辑器"), padding: { top: 14 } }} />;
 }

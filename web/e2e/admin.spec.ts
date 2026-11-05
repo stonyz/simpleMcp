@@ -1,5 +1,7 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 
+test.use({ locale: 'zh-CN' });
+
 async function selectTenant(page: Page, request: APIRequestContext, tenant: string) {
   const headers = { Authorization: 'Bearer admin-e2e-token' };
   const existing = await request.get(`/tenants/${tenant}`, { headers });

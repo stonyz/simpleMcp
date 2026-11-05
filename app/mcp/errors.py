@@ -50,12 +50,12 @@ def http_error(response: requests.Response | httpx.Response, *, include_body: bo
     except ValueError:
         reason = "HTTP error"
     details = {"type": "upstream_http_error", "status_code": status}
-    message = f"上游接口返回 HTTP {status}"
+    message = f"Upstream API returned HTTP {status}"
     text = response.text
     ctype = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
     is_html = ctype in ("text/html", "application/xhtml+xml") or text.lstrip().lower().startswith(("<html", "<!doctype html"))
     if is_html:
-        return ToolExecutionError(f"{message}：{reason}", details)
+        return ToolExecutionError(f"{message}: {reason}", details)
 
     body = text
     if ctype == "application/json" or ctype.endswith("+json"):
@@ -68,7 +68,7 @@ def http_error(response: requests.Response | httpx.Response, *, include_body: bo
         serialized = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
     except RecursionError:
         # An excessively nested body must not hide the original HTTP status.
-        body = "错误响应嵌套过深"
+        body = "Error response is nested too deeply"
         serialized = body
 
     cause = None
@@ -86,15 +86,15 @@ def http_error(response: requests.Response | httpx.Response, *, include_body: bo
             details["body"] = body
     if len(cause) > MAX_ERROR_BODY:
         details["truncated"] = True
-    return ToolExecutionError(f"{message}：{cause[:MAX_ERROR_BODY]}", details)
+    return ToolExecutionError(f"{message}: {cause[:MAX_ERROR_BODY]}", details)
 
 
 def request_error(exception: requests.RequestException | httpx.RequestError | TimeoutError) -> ToolExecutionError:
     """Network errors have no upstream HTTP status; raw exceptions can expose URLs."""
     if isinstance(exception, (requests.Timeout, httpx.TimeoutException, TimeoutError)):
-        kind, message = "upstream_timeout", "上游接口请求超时"
+        kind, message = "upstream_timeout", "Upstream API request timed out"
     elif isinstance(exception, (requests.ConnectionError, httpx.NetworkError, httpx.ProxyError)):
-        kind, message = "upstream_connection_error", "无法连接上游接口"
+        kind, message = "upstream_connection_error", "Unable to connect to upstream API"
     else:
-        kind, message = "upstream_request_error", "上游接口请求失败"
+        kind, message = "upstream_request_error", "Upstream API request failed"
     return ToolExecutionError(message, {"type": kind})

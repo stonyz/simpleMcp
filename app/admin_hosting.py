@@ -23,8 +23,8 @@ def mount_admin(app: FastAPI, directory: Path | None = None):
         @fallback.get("/", include_in_schema=False)
         def admin_not_built():
             return HTMLResponse(
-                '<html lang="zh-CN"><meta charset="utf-8"><title>管理台尚未构建</title>'
-                '<h1>管理台尚未构建</h1><p>请在 web 目录执行 npm ci 和 npm run build，'
-                '然后重启 FastAPI。Docker 构建会自动完成此步骤。</p></html>', status_code=503,
+                '<html lang="en"><meta charset="utf-8"><title>Admin UI has not been built</title>'
+                '<h1>Admin UI has not been built</h1><p>Run npm ci and npm run build in the web directory, '
+                'then restart FastAPI. Docker builds complete this step automatically.</p></html>', status_code=503,
             )
         app.mount("/admin", fallback, name="admin")

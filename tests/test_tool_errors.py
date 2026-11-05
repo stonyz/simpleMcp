@@ -72,7 +72,7 @@ class ToolErrorTests(unittest.TestCase):
                 message, details = self.assert_execution_error(
                     self.call(method=method), "upstream_http_error", 502)
                 self.assertIn("手表不在线，无法获取位置信息", message)
-                self.assertIn("502", message)
+                self.assertTrue(message.startswith("Upstream API returned HTTP 502: "))
                 self.assertEqual(details["body"], {"error": "手表不在线，无法获取位置信息"})
 
     def test_legacy_endpoint_preserves_string_error_and_adds_details(self):
@@ -83,7 +83,7 @@ class ToolErrorTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["status"], "error")
-        self.assertIn("手表不在线", payload["error"])
+        self.assertEqual(payload["error"], "Upstream API returned HTTP 502: 手表不在线")
         self.assertEqual(payload["error_details"]["status_code"], 502)
         self.assertEqual(payload["meta"]["x-request-id"], response.headers["x-request-id"])
 
@@ -143,13 +143,14 @@ class ToolErrorTests(unittest.TestCase):
                     self.assertNotIn(secret, response.text)
 
     def test_network_failures_have_no_invented_http_status(self):
-        for exception, kind in [
-            (httpx.ReadTimeout("url-secret"), "upstream_timeout"),
-            (httpx.ConnectError("url-secret"), "upstream_connection_error"),
-            (httpx.RequestError("url-secret"), "upstream_request_error"),
+        for exception, kind, expected in [
+            (httpx.ReadTimeout("url-secret"), "upstream_timeout", "Upstream API request timed out"),
+            (httpx.ConnectError("url-secret"), "upstream_connection_error", "Unable to connect to upstream API"),
+            (httpx.RequestError("url-secret"), "upstream_request_error", "Upstream API request failed"),
         ]:
             with self.subTest(kind=kind), patch("app.mcp.rest.executor.httpx.AsyncClient.request", side_effect=exception):
-                self.assert_execution_error(self.call(), kind)
+                message, _ = self.assert_execution_error(self.call(), kind)
+                self.assertEqual(message, expected)
 
     def test_oauth_failure_keeps_message_without_full_body(self):
         self.metadata["auth"] = json.dumps({"client_id": "client", "client_secret": "secret",
@@ -172,9 +173,28 @@ class ToolErrorTests(unittest.TestCase):
             "app.mcp.rest.executor.httpx.AsyncClient.request", side_effect=RuntimeError("private-stack-secret")
         ):
             response = self.call()
-        self.assert_execution_error(response, "tool_execution_error")
+        message, _ = self.assert_execution_error(response, "tool_execution_error")
+        self.assertEqual(message, "Tool execution failed; contact an administrator with the request ID")
         self.assertNotIn("private-stack-secret", response.text)
         self.assertIn("private-stack-secret", "\n".join(logs.output))
+
+    def test_output_contract_errors_are_english_and_hide_upstream_values(self):
+        for output_schema, kind, expected in [
+            ({"type": "object", "required": ["location"]}, "output_validation_error",
+             "Upstream API response does not match the tool output schema; contact an administrator with the request ID"),
+            ({"type": "object", "$schema": "http://json-schema.org/draft-04/schema#"},
+             "unsupported_schema_dialect", "Tool output schema uses an unsupported JSON Schema version"),
+        ]:
+            self.manager.get_tenant_registry("test").register_function(
+                "getWatchLocation", self.metadata, {"output_schema": output_schema}, "org", "app")
+            with self.subTest(kind=kind), patch(
+                "app.mcp.rest.executor.httpx.AsyncClient.request",
+                return_value=self.upstream('{"private":"上游私密信息"}', 200),
+            ):
+                response = self.call()
+                message, _ = self.assert_execution_error(response, kind)
+                self.assertEqual(message, expected)
+                self.assertNotIn("上游私密信息", response.text)
 
     def test_unknown_and_inaccessible_tools_remain_protocol_errors(self):
         for params in ({"name": "missing"}, {"orgid": "other", "appid": "app"}):

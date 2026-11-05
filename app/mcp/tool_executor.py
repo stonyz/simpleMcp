@@ -297,6 +297,6 @@ async def execute_tool(tool_metadata, **kwargs) -> Tuple[Optional[ToolExecutionE
             return request_error(exc), None
         except Exception:
             log.exception("Unexpected error executing tool %s", tool_metadata.get("tool_name", "unknown"))
-            return ToolExecutionError("工具执行失败，请通过请求 ID 联系管理员排查", {"type": "tool_execution_error"}), None
+            return ToolExecutionError("Tool execution failed; contact an administrator with the request ID", {"type": "tool_execution_error"}), None
     else:
         raise ValueError(f"Unsupported tool type: {tool_metadata['type']}")

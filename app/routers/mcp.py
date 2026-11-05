@@ -39,8 +39,7 @@ async def mcp_list(
     name: Optional[str] = Query(None),
 ):
     """
-    MCP 风格的 list：返回 function schemas
-    （你也可以保持与 /functions 一致）
+    Return MCP-style function schemas, consistent with /functions.
     """
     return tenant_manager.list_functions(tenant=tenant, orgid=orgid, appid=appid, name=name)
 
@@ -53,8 +52,8 @@ async def mcp_call(
     appid: Optional[str] = Body(None, embed=True)
 ):
     """
-    MCP 风格的 call：执行实际的 REST 请求。
-    Body 示例：
+    Execute a REST request through the MCP-style call endpoint.
+    Example body:
     {
       "function_name": "get_user",
       "parameters": {"user_id": "123"},
@@ -83,12 +82,13 @@ async def mcp_jsonrpc(
     tenant: str = Query(..., alias="tenant")):
 
     """
-    标准 MCP JSON-RPC 2.0 接口：支持 tools/list 与 tools/call（兼容 list_tools/call_tool），以及 initialize。
-    - initialize: 返回协议版本、服务端能力与 serverInfo
-    - tools/list 或 list_tools: params 可包含 orgid/appid/name 进行过滤
-    - tools/call 或 call_tool: params 包含 name/function_name 与 arguments/parameters
-    - 支持通过 HTTP Headers 传递 orgid/appid: X-Org-ID, X-App-ID
-    返回严格的 JSON-RPC 2.0 格式。
+    Standard MCP JSON-RPC 2.0 endpoint supporting tools/list, tools/call,
+    their list_tools/call_tool aliases, and initialize.
+    - initialize: return the protocol version, server capabilities, and serverInfo
+    - tools/list or list_tools: filter using orgid/appid/name in params
+    - tools/call or call_tool: supply name/function_name and arguments/parameters in params
+    - Pass orgid/appid through HTTP headers: X-Org-ID, X-App-ID
+    Return strict JSON-RPC 2.0 responses.
     """
     log.info('Received request: %s %s', request.method, request.url.path)
     try:

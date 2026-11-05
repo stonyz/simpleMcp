@@ -24,7 +24,12 @@ class AdminHostingTests(unittest.TestCase):
             mount_admin(app, Path(root) / "does-not-exist")
             with patch("app.midware.AuthMiddleware.settings.AUTH_TOKENS", ["secret"]), TestClient(app) as client:
                 self.assertEqual(client.get("/admin").status_code, 503)
-                self.assertEqual(client.get("/admin/").status_code, 503)
+                response = client.get("/admin/")
+                self.assertEqual(response.status_code, 503)
+                self.assertIn('<html lang="en">', response.text)
+                self.assertIn("Admin UI has not been built", response.text)
+                self.assertIn("npm ci", response.text)
+                self.assertIn("npm run build", response.text)
                 for method, path in [("POST", "/admin/services/save"), ("GET", "/admin/services/detail")]:
                     response = client.request(method, path)
                     self.assertIn(response.status_code, (404, 405))

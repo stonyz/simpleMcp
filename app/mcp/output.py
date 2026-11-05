@@ -84,7 +84,7 @@ def structured_output(value: Any, schema: dict | None) -> dict | None:
         validator_class = (validator_for(validation_schema, default=None)
                            if "$schema" in validation_schema else Draft202012Validator)
         if validator_class not in (Draft7Validator, Draft202012Validator):
-            raise ToolExecutionError("工具输出 schema 使用了不支持的 JSON Schema 版本",
+            raise ToolExecutionError("Tool output schema uses an unsupported JSON Schema version",
                                      {"type": "unsupported_schema_dialect"})
         try:
             validator_class.check_schema(validation_schema)
@@ -93,7 +93,7 @@ def structured_output(value: Any, schema: dict | None) -> dict | None:
         except (ValidationError, SchemaError, Unresolvable) as exc:
             # Validator messages can contain entire values, including credentials.
             raise ToolExecutionError(
-                "上游接口返回的数据不符合工具输出 schema，请通过请求 ID 联系管理员排查",
+                "Upstream API response does not match the tool output schema; contact an administrator with the request ID",
                 {"type": "output_validation_error"},
             ) from exc
     return result if isinstance(result, dict) else None

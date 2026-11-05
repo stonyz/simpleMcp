@@ -1,10 +1,11 @@
 """Database-backed credentials. Raw secrets only leave create/rotate responses."""
+from app.errors import ApiError, message
+from pydantic_core import PydanticCustomError
 from datetime import datetime, timezone, timedelta
 import hashlib
 import secrets
 from uuid import uuid4
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 
@@ -28,7 +29,7 @@ class CredentialInput(BaseModel):
     @classmethod
     def name_nonblank(cls, value):
         if not value.strip():
-            raise ValueError('Name must not be blank')
+            raise PydanticCustomError("name_blank", message("name_blank"))
         return value.strip()
 
     @field_validator('expires_at')
@@ -36,7 +37,7 @@ class CredentialInput(BaseModel):
     def utc_expiry(cls, value):
         if value is not None:
             if value.tzinfo is None:
-                raise ValueError('Expiry must include a timezone')
+                raise PydanticCustomError("expiry_timezone_required", message("expiry_timezone_required"))
             return value.astimezone(timezone.utc).replace(tzinfo=None)
         return None
 
@@ -72,7 +73,7 @@ def credential_view(row):
 def get_credential(db, identity, tenant=None):
     row = db.get(MCPCredential, identity)
     if row is None or (tenant is not None and (not row.rules or any(rule.tenant != tenant for rule in row.rules))):
-        raise HTTPException(404, detail='访问凭证不存在')
+        raise ApiError(404, "credential_not_found")
     return row
 
 
@@ -83,14 +84,14 @@ def save_credential(db, body, identity=None, tenant=None):
     if tenant is not None:
         get_tenant(db, tenant)
         if any(rule.tenant != tenant for rule in body.rules):
-            raise HTTPException(403, detail='授权规则必须属于当前租户')
+            raise ApiError(403, "credential_tenant_mismatch")
     for rule in body.rules:
         if rule.services is not None:
             existing = set(db.scalars(select(OpenAPIFile.fileId).where(
                 OpenAPIFile.tenant == rule.tenant, OpenAPIFile.orgid == rule.org,
                 OpenAPIFile.appid == rule.app, OpenAPIFile.fileId.in_(rule.services))).all())
             if existing != set(rule.services):
-                raise HTTPException(400, detail='授权规则包含不存在的服务，请刷新候选列表')
+                raise ApiError(400, "credential_service_not_found")
     for rule in body.rules:
         ensure_tenant(db, rule.tenant)
     secret = None

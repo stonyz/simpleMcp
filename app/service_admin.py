@@ -1,6 +1,9 @@
 """Document queries and non-mutating validation for the administration UI."""
+from app.errors import ApiError, message
+from pydantic_core import PydanticCustomError
 from copy import deepcopy
 import json
+import math
 from urllib.parse import urlparse
 from typing import Literal, Optional
 
@@ -34,7 +37,7 @@ class ServiceInput(BaseModel):
     @classmethod
     def nonblank(cls, value):
         if not value.strip():
-            raise ValueError("Value must not be blank")
+            raise PydanticCustomError("value_blank", message("value_blank"))
         return value.strip()
 
 
@@ -64,9 +67,9 @@ def authorization_value(body):
     try:
         credentials = json.loads(body.auth or "")
     except (ValueError, RecursionError) as exc:
-        raise HTTPException(400, detail="上游认证配置必须是 JSON 对象") from exc
+        raise ApiError(400, "auth_json_object") from exc
     if not isinstance(credentials, dict):
-        raise HTTPException(400, detail="上游认证配置必须是 JSON 对象")
+        raise ApiError(400, "auth_json_object")
     # Untyped JSON remains supported for existing API clients. The UI always
     # sends an explicit type, which is checked against the executor's formats.
     if body.auth_type:
@@ -74,22 +77,39 @@ def authorization_value(body):
                     "oauth2": ("client_id", "client_secret", "token_url")}[body.auth_type]
         allowed = set(required) | ({"scopes"} if body.auth_type == "oauth2" else set())
         if set(credentials) - allowed:
-            raise HTTPException(400, detail="认证字段与所选授权方式不匹配")
+            raise ApiError(400, "auth_fields_mismatch")
         for field in required:
             value = credentials.get(field)
             if not isinstance(value, str) or not value or (field not in ("password", "client_secret", "access_token") and not value.strip()):
-                raise HTTPException(400, detail=f"请填写有效的 {field}")
+                raise ApiError(400, "auth_field_required", field=field)
         if body.auth_type == "oauth2":
             try:
                 address = urlparse(credentials["token_url"])
                 if address.scheme not in ("http", "https") or not address.hostname or any(c.isspace() for c in credentials["token_url"]):
                     raise ValueError("invalid URL")
             except ValueError as exc:
-                raise HTTPException(400, detail="token_url 必须是有效的 HTTP/HTTPS 地址") from exc
+                raise ApiError(400, "auth_token_url_invalid") from exc
             scopes = credentials.get("scopes", [])
             if not isinstance(scopes, list) or any(not isinstance(scope, str) or not scope or any(c.isspace() for c in scope) for scope in scopes):
-                raise HTTPException(400, detail="scopes 必须是权限范围字符串数组")
+                raise ApiError(400, "auth_scopes_invalid")
     return body.auth
+
+
+def validate_document_timeouts(data):
+    """Validate timeout extensions without rendering untrusted values."""
+    for path, methods in data.get("paths", {}).items():
+        if not isinstance(methods, dict):
+            continue
+        for method, operation in methods.items():
+            if str(method).lower() not in ("get", "post", "put", "delete", "patch", "head", "options") or not isinstance(operation, dict):
+                continue
+            value = operation.get("x-request-timeout-seconds", 30)
+            try:
+                valid = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+            except OverflowError:
+                valid = False
+            if not valid:
+                raise ApiError(400, "document_timeout_invalid", method=str(method).upper(), path=path)
 
 
 def parse_document(content, org, app, file_id=None, file_name=None):
@@ -99,35 +119,34 @@ def parse_document(content, org, app, file_id=None, file_name=None):
         # OpenAPI and the browser require finite, JSON-compatible values.
         json.dumps(data, allow_nan=False)
         if not isinstance(data, dict) or not isinstance(data.get("paths"), dict):
-            raise ValueError("文档必须包含 paths 对象")
+            raise ApiError(400, "document_paths_required")
         if not str(data.get("openapi", "")).startswith("3."):
-            raise ValueError("请使用 OpenAPI 3.x 文档")
+            raise ApiError(400, "document_openapi_version")
         info = data.get("info")
         if not isinstance(info, dict) or not isinstance(info.get("title"), str) or not info["title"].strip():
-            raise ValueError("info.title 必须是非空字符串")
+            raise ApiError(400, "document_title_invalid")
         if not isinstance(info.get("version"), str):
-            raise ValueError("info.version 必须是字符串")
+            raise ApiError(400, "document_version_invalid")
         for path, methods in data["paths"].items():
             if not isinstance(path, str) or not path.startswith("/") or not isinstance(methods, dict):
-                raise ValueError("paths 中的路径及方法格式不正确")
+                raise ApiError(400, "document_paths_invalid")
             for method, operation in methods.items():
                 if str(method).lower() in ("get", "post", "put", "delete", "patch", "head", "options"):
                     if not isinstance(operation, dict):
-                        raise ValueError(f"{method} {path} 必须是对象")
+                        raise ApiError(400, "document_operation_object", method=method, path=path)
                     for field in ("summary", "description"):
                         if field in operation and not isinstance(operation[field], str):
-                            raise ValueError(f"{method} {path}: {field} 必须是字符串")
+                            raise ApiError(400, "document_operation_field_string", method=method, path=path, field=field)
                     if "operationId" in operation and (not isinstance(operation["operationId"], str) or not operation["operationId"].strip()):
-                        raise ValueError("operationId 必须是非空字符串")
+                        raise ApiError(400, "document_operation_id_invalid")
+        validate_document_timeouts(data)
         tools = parse_tools_from_openapi(org, app, deepcopy(data), file_id, file_name)
         names = [t["name"] for t in tools]
         if len(set(names)) != len(names):
-            raise ValueError("同一文档内的工具名称不能重复")
+            raise ApiError(400, "document_duplicate_tools")
         return data, tools
-    except ValueError as exc:
-        raise HTTPException(400, detail=str(exc)) from exc
-    except (yaml.YAMLError, AttributeError, TypeError, KeyError, RecursionError) as exc:
-        raise HTTPException(400, detail="OpenAPI 文档结构或 YAML/JSON 格式不正确") from exc
+    except (yaml.YAMLError, ValueError, AttributeError, TypeError, KeyError, RecursionError) as exc:
+        raise ApiError(400, "document_invalid") from exc
 
 
 def tool_view(tool, manager, tenant):
@@ -144,13 +163,15 @@ def document_view(row, manager, detail=False):
     try:
         data, tools = parse_document(row.openapi_yaml, row.orgid, row.appid, row.fileId, row.fileName)
     except HTTPException:
-        data, tools, error = {}, [], "已存文档无法解析，请编辑修复"
+        data, tools, error = {}, [], message("stored_document_invalid")
     views = [tool_view(t, manager, row.tenant) for t in tools]
     result = {"tenant": row.tenant, "org": row.orgid, "app": row.appid,
               "fileId": row.fileId, "fileName": row.fileName, "title": row.title,
               "version": row.version, "created_at": row.create_at, "updated_at": row.update_at,
               "tool_count": len(views), "active_tool_count": sum(t["active"] for t in views),
               "auth_configured": bool(row.auth), "auth_type": authorization_type(row.auth), "error": error}
+    if error:
+        result.update(error_code="stored_document_invalid", error_params={})
     if detail:
         result.update(document=row.openapi_yaml, tools=views, servers=data.get("servers", []))
     return result
@@ -159,7 +180,7 @@ def document_view(row, manager, detail=False):
 def find_document(db, tenant, org, app, file_id):
     row = crud.get_one_openapi(db, tenant, org, app, file_id)
     if row is None:
-        raise HTTPException(404, detail="服务文档不存在，请刷新列表")
+        raise ApiError(404, "document_not_found")
     return row
 
 

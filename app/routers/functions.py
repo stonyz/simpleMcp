@@ -13,7 +13,7 @@ async def list_functions(
     name: Optional[str] = Query(None)
 ):
     """
-    返回大模型可直接使用的 function schema：
+    Return function schemas ready for use by language models:
     [{"name": "...", "description": "...", "parameters": {...}} ...]
     """
     return tenant_manager.list_functions(tenant=tenant, orgid=orgid, appid=appid, name=name)

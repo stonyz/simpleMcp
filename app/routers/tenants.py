@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from app.errors import ApiError
+from fastapi import APIRouter, Depends
 from sqlalchemy.exc import IntegrityError
 from app.access import authorize_request, check_identifier
 from app.db import get_db_context
@@ -18,13 +19,13 @@ def tenants():
 def create_tenant(body: TenantCreate):
     with get_db_context() as db:
         if db.get(Tenant, body.id) is not None:
-            raise HTTPException(409, detail='租户标识已存在')
+            raise ApiError(409, "tenant_exists")
         row = Tenant(**body.model_dump(), created_at=now(), updated_at=now())
         db.add(row)
         try:
             db.flush()
         except IntegrityError as exc:
-            raise HTTPException(409, detail='租户标识已存在') from exc
+            raise ApiError(409, "tenant_exists") from exc
         return tenant_view(db, row)
 
 
@@ -51,6 +52,6 @@ def delete_tenant(identity: str):
         row = get_tenant(db, identity)
         view = tenant_view(db, row)
         if view['service_count'] or view['credential_count']:
-            raise HTTPException(409, detail='租户仍有服务或访问凭证，请先清空后再删除')
+            raise ApiError(409, "tenant_not_empty")
         db.delete(row)
         return {'deleted': True}

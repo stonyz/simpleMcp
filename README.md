@@ -1,5 +1,7 @@
 # MCP Server
 
+English | [简体中文](README.zh-CN.md)
+
 MCP Server is a backend service designed to manage and serve OpenAPI specifications, acting as a middleware or gateway for microservices. It supports dynamic loading of OpenAPI definitions, authentication, logging, and structured exception handling.
 
 ## Features
@@ -14,58 +16,122 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 - Multi-tenant isolation with orgId/appId
 - Built-in React service administration UI at `/admin/`
 
-## Web 服务管理台
+## Web Administration Console
 
-浏览器访问 `http://localhost:8000/admin/`，输入 `.env` 中 `AUTH_TOKENS`
-配置的管理员 Token 登录，在入口选择租户后进入工作空间。管理台使用 React、TypeScript、Vite、Ant Design
-和本地加载的 Monaco 编辑器，不依赖外部 CDN。
+Open `http://localhost:8000/admin/`, sign in with an administrator token from
+`AUTH_TOKENS` in `.env`, then choose a tenant workspace. The console uses React,
+TypeScript, Vite, Ant Design and a locally loaded Monaco editor, without external CDNs.
 
-支持服务分页查询、按组织/应用筛选、搜索、YAML/JSON 上传或粘贴、工具变更预览、
-注册、覆盖更新、删除、文档导出，以及复制 MCP 接入配置。更新锁定
-`tenant + org + app + fileId`，保存前检查重名工具；其他文档有同名工具时拒绝保存，
-现有 `/services/register` 的兼容行为保持不变。详情区分文档声明工具和当前注册表生效工具，
-不检测上游健康状态。文档导出为数据库保存的 YAML，不保留原始文件的排版和注释。
+### Interface language
 
-管理台使用 `AUTH_TOKENS` 中的管理员凭证；默认仅允许管理，`ADMIN_MCP_ENABLED=true` 可显式开启管理员 MCP 访问。
-组织和应用支持联动候选，也允许注册新的标识。
-候选来自持久化文档汇总，删除最后一份文档后对应分组消失。
-工作空间内的服务、候选列表和访问凭证均固定在当前租户；顶部栏显示租户名称，点击切换图标可重新选择。
-租户选择页直接支持新增，卡片提供编辑图标和更多操作菜单，可修改名称和说明、删除空租户；租户标识创建后不可修改。
-含服务或凭证规则的租户不能删除。首次升级会自动登记历史服务及凭证规则中的租户，不改变其归属。
-“访问凭证”页面只管理当前租户的 MCP 客户端 Token：支持多个授权规则、租户/组织/应用/指定服务范围、
-分别控制工具列表和调用权限，以及停用、过期时间、密钥轮换和删除。
-数据库 Token 只用于 MCP，不能登录管理台或修改服务。
-新密钥仅在创建或轮换时展示一次，数据库只保存摘要和展示前缀。
-管理员登录 Token 仅保存在页面内存中，刷新或退出后需要重新输入。
-上游 `auth` 配置不回显，编辑时可保留、替换或清除。HTTP 请求日志用日志级别控制：
-`LOG_LEVEL=INFO` 记录方法、路径、状态和耗时；`.env` 设置 `LOG_LEVEL=DEBUG`
-并重启后，会额外在 `logs/request-YYYY-MM-DD.log` 中记录请求 URL、请求头、
-请求正文、响应头和文本响应正文。Authorization 头和 token 查询参数会脱敏，凭证管理接口只记录摘要；
-其他接口正文中的上游认证仍可能包含敏感信息。SSE 保持流式传输，不收集事件正文；
-二进制或压缩响应只记录类型提示，避免将图片等强行解码成文本。
+The console supports **English** and **Simplified Chinese**. It follows your system's
+preferred browser language by default: Chinese locales use Chinese; all other locales
+fall back to English. Use the globe icon and current language in the upper-right corner of the sign-in page,
+tenant portal or workspace header to open the menu. Choose **System default**,
+**English** or **简体中文**; a checkmark identifies your preference. Changes apply
+immediately, including component controls, validation messages and date formatting.
+Your preference is saved in this browser across refreshes and sign-outs. Selecting
+System default restores automatic detection. Switching languages preserves your current
+session and form inputs. User-provided tenant names, API descriptions and OpenAPI
+documents are displayed as supplied, without automatic translation.
 
-服务编辑页的“授权设置”按授权方式提供独立字段，无需手写 JSON：
+### API error language
 
-| 授权方式 | 配置字段 | 调用行为 |
+Backend-generated API messages are always English, regardless of `Accept-Language`.
+Management errors retain the existing response fields and add a stable `code` and safe
+`params` for localization. The console translates these errors using the shared
+`app/error_messages.json` catalog. Existing alerts follow subsequent language changes.
+Validation responses retain sanitized field diagnostics and never include raw input or
+credentials. MCP execution errors keep their existing `error_details.type` identifiers
+and now use English generated messages. User-provided names, documents and upstream
+response bodies remain in their original language.
+
+For example, a missing service document returns:
+
+```json
+{
+  "error": {
+    "type": "HTTPException",
+    "message": "Service document not found. Refresh the list",
+    "code": "document_not_found",
+    "params": {},
+    "status_code": 404,
+    "path": "/services/detail",
+    "method": "GET"
+  }
+}
+```
+
+### Services and tenant workspaces
+
+The console supports paginated service lists, organization/application filters, search,
+YAML/JSON upload or paste, tool change previews, registration, updates, deletion,
+document export and copying MCP client configuration. Updates lock
+`tenant + org + app + fileId`. Saving is rejected if tool names conflict with another
+document; the compatibility behavior of `/services/register` is unchanged. Details
+distinguish declared tools from tools active in the registry; they do not check upstream
+health. Exports contain the YAML stored in the database and do not preserve original
+formatting or comments.
+
+Administrator tokens from `AUTH_TOKENS` allow management access. Set
+`ADMIN_MCP_ENABLED=true` to explicitly enable MCP access for administrators.
+Organization and application suggestions are linked, and new identifiers can be entered.
+Suggestions come from stored documents; a group disappears when its last document is deleted.
+Services, suggestions and access credentials are restricted to the selected tenant.
+Use the switch icon next to the tenant name in the header to return to tenant selection.
+
+The tenant portal supports creation, editing names/descriptions and deleting empty tenants.
+Tenant IDs cannot be changed after creation. Tenants with services or credential rules
+cannot be deleted. On upgrade, existing tenants referenced by services and credential
+rules are registered automatically without changing ownership.
+
+### Access credentials and authorization
+
+The **Access credentials** page manages MCP client tokens for the current tenant.
+Multiple rules can authorize an entire tenant, organization, application or selected
+services, with separate tool-listing and tool-calling permissions. Credentials support
+disabling, expiration, rotation and deletion. Database tokens only grant MCP access;
+they cannot sign in to the console or modify services. New secrets are shown only once,
+after creation or rotation. Only digests and display prefixes are stored in the database.
+Administrator sign-in tokens are held in page memory and cleared on refresh or sign-out.
+
+Upstream `auth` credentials are never returned to the console. Editing lets you keep,
+replace or clear them. **Authorization settings** provides dedicated fields:
+
+| Method | Fields | Behavior |
 | --- | --- | --- |
-| 无需认证 | 无 | 清除服务默认凭据；调用方仍可提供 `auth` |
-| Bearer Token | `access_token` | 自动添加 `Authorization: Bearer …` |
-| HTTP Basic | `username`、`password` | 自动生成 Basic Authorization 请求头 |
-| OAuth2 Client Credentials | `token_url`、`client_id`、`client_secret`，可选 `scopes` | 获取并缓存访问令牌后调用业务 API |
+| No authentication | None | Clears default credentials; callers can still supply `auth` |
+| Bearer Token | `access_token` | Adds `Authorization: Bearer …` |
+| HTTP Basic | `username`, `password` | Generates the Basic Authorization header |
+| OAuth2 Client Credentials | `token_url`, `client_id`, `client_secret`, optional `scopes` | Obtains and caches an access token before calling the upstream API |
 
-已有服务默认选择“保留现有授权”，详情仅展示授权类型，不回显用户名、令牌、密钥等凭据。
-切换授权类型需填写完整的新凭据，隐藏类型的字段不会随请求发送。OAuth2 的令牌地址必须为
-HTTP/HTTPS 地址，scopes 可用回车、空格或逗号分隔。授权字段变化后必须重新校验预览才能保存。
-管理接口通过可选 `auth_type`（`bearer`、`basic`、`oauth2`）进行对应字段校验；原有不传类型的
-JSON `auth` 接口仍兼容。
+Existing services default to **Keep existing authorization**. Details show only the
+authorization type, never usernames, tokens or secrets. Changing the method requires
+complete new credentials; hidden fields are excluded from the request. OAuth2 token
+URLs must use HTTP/HTTPS. Separate scopes with Enter, spaces or commas. Changes to
+authorization fields require another validation preview before saving. The optional
+`auth_type` (`bearer`, `basic`, `oauth2`) enables method-specific validation; existing
+JSON `auth` requests without a type remain supported.
 
-Docker 构建会自动构建前端，仍通过一个镜像、一个 `8000` 端口提供页面和 API：
+### Request logging
+
+`LOG_LEVEL=INFO` records method, path, status and duration. Set `LOG_LEVEL=DEBUG`
+in `.env` and restart to additionally record request URLs, headers, bodies, response
+headers and text response bodies in `logs/request-YYYY-MM-DD.log`. Authorization headers
+and token query parameters are redacted; credential management endpoints log summaries
+only. Upstream credentials in other request bodies may still contain sensitive data.
+SSE remains streamed without collecting event bodies. Binary or compressed responses
+record a type hint instead of decoding the body as text.
+
+### Build and development
+
+Docker builds the frontend automatically. One image and port `8000` serve both UI and API:
 
 ```bash
 docker compose up -d --build
 ```
 
-本地运行生产构建（Node.js 22.12+ 或 24 LTS）：
+For a local production build (Node.js 22.12+ or 24 LTS):
 
 ```bash
 cd web
@@ -75,11 +141,12 @@ cd ..
 poetry run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-前端开发时，在后端已运行于 `127.0.0.1:8000` 的情况下，在 `web/` 执行
-`npm run dev`，访问 Vite 输出地址下的 `/admin/`。Vite 将 `/services` 请求代理到后端。
-后端启动时挂载 `web/dist`，首次构建后需重启后端。
+For frontend development, run the backend on `127.0.0.1:8000`, then run `npm run dev`
+inside `web/` and open `/admin/` on the Vite URL. Vite proxies API requests to the backend.
+The backend mounts `web/dist` on startup; restart it after the first frontend build.
 
-浏览器回归使用独立临时 SQLite 数据库及专用测试 Token，不读取已有服务数据：
+Browser regression tests use a temporary SQLite database and dedicated test token,
+without reading existing service data:
 
 ```bash
 cd web
@@ -88,7 +155,7 @@ npm run build
 npm run test:e2e
 ```
 
-也可以设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 使用本机 Chrome。
+Alternatively, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a local Chrome executable.
 
 ## Table of Contents
 
@@ -288,7 +355,7 @@ its original unwrapped result format.
 
 When an upstream API returns HTTP 4xx/5xx, the gateway preserves its failure
 reason and status code. For example, a 502 body
-`{"error":"手表不在线，无法获取位置信息"}` produces:
+`{"error":"Device offline; location unavailable"}` produces:
 
 ```json
 {
@@ -297,14 +364,14 @@ reason and status code. For example, a 502 body
   "result": {
     "isError": true,
     "content": [
-      {"type": "text", "text": "上游接口返回 HTTP 502：手表不在线，无法获取位置信息"}
+      {"type": "text", "text": "Upstream API returned HTTP 502: Device offline; location unavailable"}
     ],
     "_meta": {
       "x-request-id": "...",
       "error_details": {
         "type": "upstream_http_error",
         "status_code": 502,
-        "body": {"error": "手表不在线，无法获取位置信息"}
+        "body": {"error": "Device offline; location unavailable"}
       }
     }
   }
@@ -348,7 +415,7 @@ MCP Server requires clients to authenticate using a token. Tokens can be configu
 - Query parameter: `?token=<token>`
 
 `AUTH_TOKENS` contains platform administrator credentials. MCP client credentials
-are created in the Web console's **访问凭证** page and stored in SQLite.
+are created in the Web console's **Access credentials** page and stored in SQLite.
 Configuration-based scope grants have been removed; old scope configuration is
 not imported automatically. Unknown, disabled and expired client tokens return
 401, including when `AUTH_TOKENS` is empty.
@@ -618,7 +685,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT  # 可选，标注一下令牌类型（可写 JWT/opaque token/Signed Token 等）
+      bearerFormat: JWT  # Optional token format, e.g. JWT, opaque token or signed token
 
 security:
   - bearerAuth: []
