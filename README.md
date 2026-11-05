@@ -218,3 +218,7 @@ Browser tests use a temporary SQLite database and a dedicated test token. To use
 The backend lives in `app/`, the React console in `web/`, and tests in `tests/` and `web/e2e/`. Dependencies are tracked in `pyproject.toml` / `poetry.lock` and `web/package.json` / `web/package-lock.json`.
 
 Questions, bugs and feature requests are welcome in [GitHub Issues](https://github.com/stonyz/simpleMcp/issues). To contribute, fork [stonyz/simpleMcp](https://github.com/stonyz/simpleMcp), create a branch, run the relevant checks and open a pull request.
+
+## License
+
+SimpleMCP is licensed under the [MIT License](LICENSE). Commercial use, modification and redistribution are permitted, provided the copyright and license notices are retained.

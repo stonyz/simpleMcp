@@ -266,3 +266,7 @@ npm run test:e2e
 后端代码位于 `app/`，React 管理台位于 `web/`，测试位于 `tests/` 和 `web/e2e/`。Python 依赖由 `pyproject.toml`、`poetry.lock` 管理，前端依赖由 `web/package.json`、`web/package-lock.json` 管理。
 
 欢迎通过 [GitHub Issues](https://github.com/stonyz/simpleMcp/issues) 提交问题和建议。参与开发时，请先派生 [stonyz/simpleMcp](https://github.com/stonyz/simpleMcp) 仓库，创建分支，运行相关检查后提交拉取请求。
+
+## 开源许可证
+
+SimpleMCP 采用 [MIT 许可证](LICENSE)，允许商业使用、修改和再分发，使用时需保留版权声明和许可证声明。
