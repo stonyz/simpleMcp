@@ -95,7 +95,7 @@ test('database credentials can restrict services, edit rules, disable and rotate
   expect((await request.get('/services/access?tenant=scope-test', { headers: { Authorization: `Bearer ${secret}` } })).status()).toBe(403);
   await page.getByRole('button', { name: '我已保存' }).click();
   await expect(page.getByText(secret, { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '编辑权限' }).click();
+  await page.getByRole('button', { name: '编辑' }).click();
   await page.getByRole('button', { name: '添加授权规则' }).click();
   await expect(page.getByText('授权规则 2', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '保存凭证', exact: true }).click();

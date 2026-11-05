@@ -24,31 +24,31 @@ Existing REST APIs → OpenAPI documents → SimpleMCP → MCP clients / AI assi
 
 ## See it in action
 
-Actual console screenshots with demonstration data. The sample APIs use `api.example.com`; no production services or real credentials are shown. The console language can be switched between English and Chinese.
+Actual console screenshots with demonstration data. The sample APIs use `api.example.com`; no production services or real credentials are shown. These screenshots show the English interface; the [Chinese README](README.zh-CN.md) shows the Chinese interface.
 
 ### Service management
 
 Search and filter APIs by organization/application, see registered tool counts, and manage document versions in one workspace.
 
-![SimpleMCP service management console](docs/images/service-management.png)
+![SimpleMCP service management console](docs/images/service-management-en.png)
 
 ### Tools at a glance
 
 Inspect the tools declared by an OpenAPI document, their active registration status, input/output schemas and client connection configuration. Registration status does not indicate upstream availability.
 
-![SimpleMCP service details and tool list](docs/images/service-tools.png)
+![SimpleMCP service details and tool list](docs/images/service-tools-en.png)
 
 ### Tenant workspaces
 
 Choose a workspace before managing its services and credentials. Create tenants and edit their names and descriptions from this page.
 
-![SimpleMCP tenant workspace selection](docs/images/tenant-workspaces.png)
+![SimpleMCP tenant workspace selection](docs/images/tenant-workspaces-en.png)
 
 ### Client access credentials
 
 Manage tokens and their authorization rules, with separate controls for tool listing and calling.
 
-![SimpleMCP client credential management](docs/images/access-credentials.png)
+![SimpleMCP client credential management](docs/images/access-credentials-en.png)
 
 ## Quick start
 

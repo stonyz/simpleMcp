@@ -154,7 +154,6 @@ export const english = {
   "永不过期": "Never expires",
   "最近使用：": "Last used: ",
   "尚未使用": "Never used",
-  "编辑权限": "Edit permissions",
   "轮换": "Rotate",
   "编辑访问凭证": "Edit access credential",
   "创建访问凭证": "Create access credential",

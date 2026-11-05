@@ -96,6 +96,8 @@ a { color: inherit; }
 .filter-form .ant-form-item:first-child { flex: 2; min-width: 220px; }
 .services-panel .ant-table-thead > tr > th { font-size: 11px; font-weight: 500; color: #78877c; background: #f8faf7; border-top: 1px solid #edf0eb; }
 .services-panel .ant-table-cell { padding: 18px 20px; }
+.table-actions { max-width: 100%; }
+.table-actions .ant-btn { padding-inline: 8px; }
 .services-panel .ant-table-pagination { margin: 20px 24px; font-size: 12px; }
 .service-cell { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .service-cell > div { min-width: 0; }

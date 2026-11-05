@@ -132,7 +132,7 @@ function Workspace({ session, api, onLogout, onLeave }: { session: Session; api:
           { title: t("版本"), dataIndex: 'version', width: 100, render: value => <Tag bordered={false}>{value || '—'}</Tag> },
           { title: t("工具"), key: 'tools', width: 140, render: (_, row) => <div className="scope-cell"><span>{t("{0} 个工具", [row.tool_count])}</span><small><Badge status={row.error || row.active_tool_count < row.tool_count ? 'warning' : 'success'} /> {row.error ? t("需修复") : t("{0} 个已生效", [row.active_tool_count])}</small></div> },
           { title: t("更新时间"), dataIndex: 'updated_at', width: 180, render: value => <span className="muted table-time">{time(value)}</span> },
-          ...(canManage ? [{ title: t("操作"), key: 'actions', width: 150, fixed: 'right' as const, render: (_: unknown, row: Service) => <Space size={0}><Button type="link" onClick={() => setEditor({ row })}>{t("编辑")}</Button><Button type="link" danger onClick={() => remove(row)}>{t("删除")}</Button></Space> }] : []),
+          ...(canManage ? [{ title: t("操作"), key: 'actions', width: 150, fixed: 'right' as const, render: (_: unknown, row: Service) => <Space className="table-actions" wrap size={0}><Button type="link" onClick={() => setEditor({ row })}>{t("编辑")}</Button><Button type="link" danger onClick={() => remove(row)}>{t("删除")}</Button></Space> }] : []),
         ]} />
     </section><footer className="workspace-footer"><span><SafetyCertificateOutlined /> {t("当前访问范围：")}{session.tenant}</span><span>MCP Service Console</span></footer>
   </>}</main></div>
