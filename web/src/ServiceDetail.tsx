@@ -1,6 +1,6 @@
 import { t, useLanguage, apiMessage } from './i18n';
 import { useEffect, useState } from 'react';
-import { Alert, Button, Collapse, Descriptions, Drawer, Empty, Space, Spin, Tabs, Tag, Typography } from 'antd';
+import { Alert, Button, Collapse, Drawer, Empty, Space, Spin, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { downloadDocument, time, type Api, type Detail, type Service } from './api';
 import { authorizationLabels } from './AuthorizationSettings';
@@ -22,18 +22,23 @@ export default function ServiceDetail({ api, row, onClose, onEdit }: {
     type: 'http', url: mcpUrl,
     headers: { Authorization: 'Bearer YOUR_TOKEN', 'X-Org-ID': row.org, 'X-App-ID': row.app },
   } } }, null, 2);
+  const authType = detail?.auth_configured ? detail.auth_type || 'unknown' : 'none';
+  const authLabels: Record<string, string> = { none: t("无"), bearer: 'Bearer', basic: 'Basic', oauth2: 'OAuth2' };
+  const fullAuthLabel = authorizationLabels()[authType] || authorizationLabels().unknown;
   return <Drawer open width={900} title={t("服务详情")} onClose={onClose} extra={onEdit && <Button type="primary" onClick={onEdit}>{t("编辑服务")}</Button>}>
-    {error ? <Alert type="error" showIcon message={apiMessage(error)} /> : !detail ? <div className="loading-panel"><Spin /></div> : <>
+    {error ? <Alert type="error" showIcon message={apiMessage(error)} /> : !detail ? <div className="loading-panel"><Spin /></div> : <div className="service-detail-content">
       <div className="detail-title"><Tag color="green">OPENAPI {detail.version}</Tag><h2>{detail.title}</h2><p>{detail.fileName}</p></div>
       {detail.error && <Alert type="warning" message={apiMessage(detail.error, detail.error_code, detail.error_params)} />}
-      <Descriptions column={{ xs: 1, sm: 2 }} size="small" items={[
-        { key: 'tenant', label: 'Tenant', children: detail.tenant },
+      <dl className="service-metadata">{[
+        { key: 'tenant', label: t("租户"), children: detail.tenant },
         { key: 'scope', label: t("组织 / 应用"), children: `${detail.org} / ${detail.app}` },
-        { key: 'id', label: t("文档 ID"), children: <Typography.Text copyable>{detail.fileId}</Typography.Text> },
-        { key: 'auth', label: t("上游认证"), children: detail.auth_configured ? t("{0}（凭据不回显）", [authorizationLabels()[detail.auth_type || 'unknown']]) : t("无需认证") },
+        { key: 'id', label: t("文档 ID"), children: <Typography.Text copyable className="service-document-id">{detail.fileId}</Typography.Text> },
+        { key: 'auth', label: t("上游认证"), children: <Tooltip trigger={['hover', 'focus']} title={detail.auth_configured ? t("{0}（凭据不回显）", [fullAuthLabel]) : fullAuthLabel}>
+          <Tag className="service-auth-tag" tabIndex={0} color={detail.auth_configured ? 'blue' : undefined}>{authLabels[authType] || t("已配置")}</Tag>
+        </Tooltip> },
         { key: 'created', label: t("创建时间"), children: time(detail.created_at) },
         { key: 'updated', label: t("更新时间"), children: time(detail.updated_at) },
-      ]} />
+      ].map(item => <div key={item.key}><dt>{item.label}</dt><dd>{item.children}</dd></div>)}</dl>
       <Tabs items={[
         { key: 'tools', label: t("工具清单 ({0})", [detail.tool_count]), children: <>
           <p className="muted">{t("已生效 {0} / 声明 {1} 个工具。注册状态不代表上游可用性。", [detail.active_tool_count, detail.tool_count])}</p>
@@ -53,6 +58,6 @@ export default function ServiceDetail({ api, row, onClose, onEdit }: {
           <pre className="code-block">{config}</pre>
         </> },
       ]} />
-    </>}
+    </div>}
   </Drawer>;
 }

@@ -119,6 +119,15 @@ a { color: inherit; }
 @media (max-width: 760px) { .auth-fields-grid { grid-template-columns: 1fr; gap: 0; } }
 .drawer-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; }.drawer-footer > span { color: #91a095; font-size: 11px; }
 .loading-panel { min-height: 200px; display: grid; place-items: center; }.section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 16px 0; }.section-heading h3, .section-heading h4 { margin: 0; }.preview-panel { margin-top: 26px; border-top: 1px solid #e4e9e1; }.preview-panel .ant-table { margin-top: 16px; }.danger-text { color: #b64343; font-size: 12px; overflow-wrap: anywhere; }
+.service-detail-content { container-type: inline-size; }
+.service-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 32px; margin: 0 0 28px; padding: 22px 24px; border: 1px solid #e5eae2; border-radius: 8px; background: #f8faf7; }
+.service-metadata > div { min-width: 0; }
+.service-metadata dt { margin-bottom: 7px; color: #7c8983; font-size: 12px; line-height: 1.5; }
+.service-metadata dd { margin: 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.service-document-id { font-family: "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; }
+.service-auth-tag { margin-inline-end: 0; white-space: nowrap; }
+.service-auth-tag:focus-visible { outline: 2px solid #18765c; outline-offset: 3px; }
+@container (max-width: 600px) { .service-metadata { grid-template-columns: 1fr; gap: 18px; padding: 18px; } }
 .detail-title { margin: 4px 0 28px; }.detail-title h2 { font-size: 26px; margin: 14px 0 8px; }.detail-title p { color: #8b9b8d; font-family: monospace; }.code-block { padding: 18px; background: #f5f7f4; border: 1px solid #e5eae2; border-radius: 7px; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }.source-code { max-height: 65vh; overflow: auto; }.ant-descriptions-item-content { overflow-wrap: anywhere; }
 @media (min-width: 1700px) { .main-content { padding-top: 48px; } }
 @media (max-width: 1100px) { .sidebar { width: 190px; padding: 28px 12px; }.workspace { margin-left: 190px; }.main-content { padding: 28px 22px; }.topbar { padding: 0 22px; }.stat-card .ant-card-body { padding: 18px; }.stats-grid { gap: 12px; }.stat-icon { width: 34px; height: 34px; font-size: 18px; } }
