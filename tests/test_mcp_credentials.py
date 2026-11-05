@@ -23,6 +23,9 @@ class CredentialTests(unittest.TestCase):
         self.enterContext(patch('app.routers.credentials.get_db_context', self.database))
         self.enterContext(patch('app.routers.mcp.tenant_manager', self.manager))
         self.enterContext(patch('app.routers.functions.tenant_manager', self.manager))
+        from app.tenants import ensure_tenant
+        with self.database() as db:
+            ensure_tenant(db, 'one')
         app = FastAPI()
         app.add_middleware(TenantMiddleware)
         app.add_middleware(AuthMiddleware)
@@ -32,7 +35,13 @@ class CredentialTests(unittest.TestCase):
         return self.enterContext(TestClient(app))
 
     def create(self, client, rules, **extra):
-        response = client.post('/credentials/', headers={'Authorization': 'Bearer root'},
+        if len({rule['tenant'] for rule in rules}) > 1:
+            # Historical cross-tenant credentials still work at runtime, but
+            # cannot be created or managed inside a single workspace.
+            from app.credentials import CredentialInput, save_credential
+            with self.database() as db:
+                return save_credential(db, CredentialInput(name='Legacy', rules=rules, **extra))
+        response = client.post('/credentials/?tenant=' + rules[0]['tenant'], headers={'Authorization': 'Bearer root'},
                                json={'name': 'Partner', 'rules': rules, **extra})
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
@@ -65,6 +74,14 @@ class CredentialTests(unittest.TestCase):
             item = self.create(client, [rule])
             self.assertEqual(self.names(self.rpc(client, item['secret'])), expected)
             self.assertEqual(self.rpc(client, item['secret'], tenant='two').status_code, 403)
+
+    def test_admin_tokens_remain_management_only_unless_explicitly_enabled(self):
+        self.seed()
+        client = self.protected()
+        self.assertEqual(self.rpc(client, 'root').status_code, 403)
+        self.assertEqual(client.get('/credentials/?tenant=one', headers={'Authorization': 'Bearer root'}).status_code, 200)
+        with patch.object(settings, 'ADMIN_MCP_ENABLED', True):
+            self.assertEqual(self.names(self.rpc(client, 'root', params={'orgid': 'org', 'appid': 'app'})), {'first', 'second'})
 
     def test_union_operations_and_list_aliases(self):
         self.seed()
@@ -122,22 +139,22 @@ class CredentialTests(unittest.TestCase):
             row = db.get(MCPCredential, identity)
             self.assertNotIn(secret, str(row.__dict__))
             self.assertEqual(len(row.token_hash), 64)
-        listing = client.get('/credentials/', headers=admin)
+        listing = client.get('/credentials/?tenant=one', headers=admin)
         self.assertNotIn(secret, listing.text)
         self.assertNotIn('token_hash', listing.text)
         self.assertEqual(self.rpc(client, secret).status_code, 200)
         update = {'name': 'Changed', 'rules': [{'tenant': 'one', 'org': 'other'}], 'enabled': True}
-        self.assertEqual(client.put(f'/credentials/{identity}', headers=admin, json=update).status_code, 200)
+        self.assertEqual(client.put(f'/credentials/{identity}?tenant=one', headers=admin, json=update).status_code, 200)
         self.assertEqual(self.names(self.rpc(client, secret)), {'other_org'})
-        client.put(f'/credentials/{identity}', headers=admin, json={**update, 'enabled': False})
+        client.put(f'/credentials/{identity}?tenant=one', headers=admin, json={**update, 'enabled': False})
         self.assertEqual(self.rpc(client, secret).status_code, 401)
-        client.put(f'/credentials/{identity}', headers=admin, json=update)
-        rotated = client.post(f'/credentials/{identity}/rotate', headers=admin)
+        client.put(f'/credentials/{identity}?tenant=one', headers=admin, json=update)
+        rotated = client.post(f'/credentials/{identity}/rotate?tenant=one', headers=admin)
         self.assertEqual(rotated.status_code, 200, rotated.text)
         self.assertEqual(self.rpc(client, secret).status_code, 401)
         self.assertEqual(self.rpc(client, rotated.json()['secret']).status_code, 200)
         expires = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
-        client.put(f'/credentials/{identity}', headers=admin, json={**update, 'expires_at': expires})
+        client.put(f'/credentials/{identity}?tenant=one', headers=admin, json={**update, 'expires_at': expires})
         self.assertEqual(self.rpc(client, rotated.json()['secret']).status_code, 401)
 
     def test_mcp_token_cannot_manage_or_login(self):
@@ -153,7 +170,7 @@ class CredentialTests(unittest.TestCase):
         client = self.protected()
         item = self.create(client, [{'tenant': 'one', 'org': 'org', 'app': 'app', 'services': ['first']}])
         self.client.delete('/services/delete?tenant=one&org=org&app=app&fileId=first')
-        response = client.patch(f"/credentials/{item['id']}/status", headers={'Authorization': 'Bearer root'}, json={'enabled': False})
+        response = client.patch(f"/credentials/{item['id']}/status?tenant=one", headers={'Authorization': 'Bearer root'}, json={'enabled': False})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.rpc(client, item['secret']).status_code, 401)
 
@@ -164,7 +181,7 @@ class CredentialTests(unittest.TestCase):
                      {'tenant': 'one', 'org': 'org', 'app': 'app', 'services': ['missing']},
                      {'tenant': 'one', 'orgid': 'wrong'}, {'tenant': 'bad tenant'},
                      {'tenant': 'one', 'operations': []}]:
-            response = client.post('/credentials/', headers={'Authorization': 'Bearer root'},
+            response = client.post('/credentials/?tenant=one', headers={'Authorization': 'Bearer root'},
                                    json={'name': 'invalid', 'rules': [rule]})
             self.assertIn(response.status_code, (400, 422), response.text)
         with patch.object(settings, 'AUTH_TOKENS', []):

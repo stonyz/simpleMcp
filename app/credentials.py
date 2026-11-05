@@ -69,14 +69,21 @@ def credential_view(row):
             'rules': [rule_view(rule) for rule in row.rules]}
 
 
-def get_credential(db, identity):
+def get_credential(db, identity, tenant=None):
     row = db.get(MCPCredential, identity)
-    if row is None:
+    if row is None or (tenant is not None and (not row.rules or any(rule.tenant != tenant for rule in row.rules))):
         raise HTTPException(404, detail='访问凭证不存在')
     return row
 
 
-def save_credential(db, body, identity=None):
+def save_credential(db, body, identity=None, tenant=None):
+    from app.tenants import ensure_tenant, get_tenant
+    if identity is not None:
+        row = get_credential(db, identity, tenant)
+    if tenant is not None:
+        get_tenant(db, tenant)
+        if any(rule.tenant != tenant for rule in body.rules):
+            raise HTTPException(403, detail='授权规则必须属于当前租户')
     for rule in body.rules:
         if rule.services is not None:
             existing = set(db.scalars(select(OpenAPIFile.fileId).where(
@@ -84,13 +91,15 @@ def save_credential(db, body, identity=None):
                 OpenAPIFile.appid == rule.app, OpenAPIFile.fileId.in_(rule.services))).all())
             if existing != set(rule.services):
                 raise HTTPException(400, detail='授权规则包含不存在的服务，请刷新候选列表')
+    for rule in body.rules:
+        ensure_tenant(db, rule.tenant)
     secret = None
     if identity is None:
         row = MCPCredential(id=uuid4().hex, created_at=utcnow())
         secret = rotate_secret(row)
         db.add(row)
     else:
-        row = get_credential(db, identity)
+        row = get_credential(db, identity, tenant)
     row.name, row.description, row.enabled = body.name, body.description, body.enabled
     row.expires_at, row.updated_at = body.expires_at, utcnow()
     row.rules = [MCPAccessRule(**rule.model_dump()) for rule in body.rules]
@@ -112,9 +121,9 @@ def authenticate(db, secret):
     return policy
 
 
-def catalog(db):
+def catalog(db, tenant):
     rows = db.execute(select(OpenAPIFile.tenant, OpenAPIFile.orgid, OpenAPIFile.appid,
-                             OpenAPIFile.fileId, OpenAPIFile.title, OpenAPIFile.fileName)
+                             OpenAPIFile.fileId, OpenAPIFile.title, OpenAPIFile.fileName).where(OpenAPIFile.tenant == tenant)
                       .order_by(OpenAPIFile.tenant, OpenAPIFile.orgid, OpenAPIFile.appid, OpenAPIFile.title)).all()
     return {'services': [{'tenant': t, 'org': o, 'app': a, 'fileId': f, 'title': title, 'fileName': name}
                          for t, o, a, f, title, name in rows]}

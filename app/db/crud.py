@@ -5,6 +5,8 @@ import json
 import yaml
 from typing import List, Optional, Tuple
 def upsert_openapi_file(db: Session, tenant: str, orgid: str, appid: str, fileId: str, fileName: str, openapi_data: dict, auth: Optional[str] = None):
+    from app.tenants import ensure_tenant
+    ensure_tenant(db, tenant)
     info = openapi_data.get("info", {})
     title = info.get("title", "untitled")
     version = info.get("version") or ""

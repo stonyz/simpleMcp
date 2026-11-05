@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     
     # 授权Tokens列表
     AUTH_TOKENS: List[str] = Field(default_factory=list, description="List of valid authorization tokens")
+    ADMIN_MCP_ENABLED: bool = Field(False, description="Allow configured administrator tokens to access MCP")
 
     # 代理配置
     PROXY_URL: Optional[str] = Field(None, description="Proxy URL for outgoing requests")

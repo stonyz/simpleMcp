@@ -34,11 +34,13 @@ export interface Credential extends CredentialInput {
 }
 export interface IssuedCredential extends Credential { secret: string }
 export interface CatalogService { tenant: string; org: string; app: string; fileId: string; title: string; fileName: string }
+export interface Tenant { id: string; name: string; description: string; service_count: number; credential_count: number; created_at: string; updated_at: string }
+export interface TenantInput { name: string; description: string }
 
-export function createApi(token: string, tenant: string, unauthorized?: () => void) {
+export function createApi(token: string, tenant?: string, unauthorized?: () => void) {
   async function request<T>(path: string, query: Record<string, string | number> = {}, body?: unknown,
                             method = 'GET', signal?: AbortSignal): Promise<T> {
-    const params = new URLSearchParams({ tenant, ...Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)])) });
+    const params = new URLSearchParams({ ...Object.fromEntries(Object.entries(query).map(([k, v]) => [k, String(v)])), ...(tenant === undefined ? {} : { tenant }) });
     const response = await fetch(`${path}?${params}`, {
       method, signal, credentials: 'omit',
       headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -60,6 +62,11 @@ export function createApi(token: string, tenant: string, unauthorized?: () => vo
   }
   const identity = (row: Service) => ({ org: row.org, app: row.app, fileId: row.fileId });
   return {
+    tenants: (signal?: AbortSignal) => request<{ items: Tenant[] }>('/tenants/', {}, undefined, 'GET', signal),
+    tenant: (id: string) => request<Tenant>(`/tenants/${encodeURIComponent(id)}`),
+    createTenant: (body: TenantInput & { id: string }) => request<Tenant>('/tenants/', {}, body, 'POST'),
+    updateTenant: (id: string, body: TenantInput) => request<Tenant>(`/tenants/${encodeURIComponent(id)}`, {}, body, 'PUT'),
+    deleteTenant: (id: string) => request(`/tenants/${encodeURIComponent(id)}`, {}, undefined, 'DELETE'),
     credentials: (signal?: AbortSignal) => request<{ items: Credential[] }>('/credentials/', {}, undefined, 'GET', signal),
     credentialCatalog: (signal?: AbortSignal) => request<{ services: CatalogService[] }>('/credentials/catalog', {}, undefined, 'GET', signal),
     createCredential: (body: CredentialInput) => request<IssuedCredential>('/credentials/', {}, body, 'POST'),

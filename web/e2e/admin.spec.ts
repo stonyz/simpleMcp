@@ -1,4 +1,63 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
+
+async function selectTenant(page: Page, request: APIRequestContext, tenant: string) {
+  const headers = { Authorization: 'Bearer admin-e2e-token' };
+  const existing = await request.get(`/tenants/${tenant}`, { headers });
+  if (existing.status() === 404) {
+    const created = await request.post('/tenants/', { headers, data: { id: tenant, name: tenant } });
+    expect(created.ok()).toBeTruthy();
+  } else expect(existing.ok()).toBeTruthy();
+  await expect(page.getByRole('heading', { name: '选择租户', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await page.getByRole('button', { name: `进入租户 ${tenant}`, exact: true }).click();
+  await expect(page.getByRole('button', { name: '切换租户', exact: true })).toBeVisible();
+}
+
+test('tenant portal fixes workspace scope and isolates credentials when returning to choose another team', async ({ page, request }) => {
+  const headers = { Authorization: 'Bearer admin-e2e-token' };
+  await page.goto('/admin/');
+  await expect(page.getByLabel('Tenant', { exact: true })).toHaveCount(0);
+  await page.getByLabel('访问 Token').fill('admin-e2e-token');
+  await page.getByRole('button', { name: '进入管理台' }).click();
+  await page.getByRole('button', { name: '新增租户', exact: true }).click();
+  await page.getByLabel('租户标识').fill('workspace-a');
+  await page.getByLabel('租户名称').fill('工作组 A');
+  await page.getByLabel('租户说明').fill('独立工作空间');
+  await page.getByRole('button', { name: '保存租户' }).click();
+  await expect(page.getByText('工作组 A', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '编辑租户 workspace-a', exact: true }).click();
+  await expect(page.getByLabel('租户标识')).toBeDisabled();
+  await page.getByLabel('租户名称').fill('工作组 A（已更新）');
+  await page.getByRole('button', { name: '保存租户' }).click();
+  await expect(page.getByText('工作组 A（已更新）', { exact: true })).toBeVisible();
+  await expect(page.locator('.ant-modal-content')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/tenant-portal-desktop.png', fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: '进入租户 workspace-a', exact: true }).click();
+  await expect(page.getByLabel('切换 Tenant')).toHaveCount(0);
+  await expect(page.locator('.topbar')).toContainText('工作组 A');
+  await page.getByRole('button', { name: '访问凭证', exact: true }).click();
+  await page.getByRole('button', { name: '创建凭证', exact: true }).click();
+  await expect(page.getByLabel('租户', { exact: true })).toHaveCount(0);
+  await page.getByLabel('凭证名称').fill('A-only credential');
+  await page.getByRole('button', { name: '保存凭证', exact: true }).click();
+  await expect(page.getByText('此 Token 仅显示一次')).toBeVisible();
+  await page.getByRole('button', { name: '我已保存' }).click();
+  await expect(page.getByText('A-only credential', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '切换租户' }).click();
+  await selectTenant(page, request, 'workspace-b');
+  await page.getByRole('button', { name: '访问凭证', exact: true }).click();
+  await expect(page.getByText('A-only credential', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '切换租户' }).click();
+  await page.getByRole('button', { name: '更多租户操作 workspace-b', exact: true }).click();
+  await page.getByRole('menuitem', { name: '删除租户' }).click();
+  await page.getByRole('button', { name: '确认删除租户' }).click();
+  await expect(page.getByRole('button', { name: '进入租户 workspace-b', exact: true })).toHaveCount(0);
+  await selectTenant(page, request, 'workspace-a');
+  await page.getByRole('button', { name: '访问凭证', exact: true }).click();
+  await expect(page.getByText('A-only credential', { exact: true })).toBeVisible();
+  const scoped = await request.get('/credentials/?tenant=workspace-a', { headers });
+  expect((await scoped.json()).items[0].rules.every((rule: { tenant: string }) => rule.tenant === 'workspace-a')).toBeTruthy();
+});
 
 test('database credentials can restrict services, edit rules, disable and rotate from the console', async ({ page, request }) => {
   const admin = { Authorization: 'Bearer admin-e2e-token' };
@@ -10,8 +69,8 @@ test('database credentials can restrict services, edit rules, disable and rotate
   }
   await page.goto('/admin/');
   await page.getByLabel('访问 Token').fill('admin-e2e-token');
-  await page.getByLabel('Tenant').fill('scope-test');
   await page.getByRole('button', { name: '进入管理台' }).click();
+  await selectTenant(page, request, 'scope-test');
   await page.getByRole('button', { name: '访问凭证', exact: true }).click();
   await page.getByRole('button', { name: '创建凭证', exact: true }).click();
   await page.getByLabel('凭证名称').fill('Partner A');
@@ -70,8 +129,8 @@ test('registration offers persisted org/app candidates and clears app on org cha
   }
   await page.goto('/admin/');
   await page.getByLabel('访问 Token').fill('admin-e2e-token');
-  await page.getByLabel('Tenant').fill('catalog-test');
   await page.getByRole('button', { name: '进入管理台' }).click();
+  await selectTenant(page, request, 'catalog-test');
   await page.getByRole('button', { name: '注册服务' }).first().click();
   await page.getByLabel('组织 Org').click();
   await page.locator('.ant-select-item-option[title="catalog-org-a"]').click();
@@ -101,14 +160,14 @@ paths:
           description: OK
 `;
 
-test('register, inspect, update, connect, scope and delete a service', async ({ page }) => {
+test('register, inspect, update, connect, scope and delete a service', async ({ page, request }) => {
   await page.goto('/admin/');
   await page.getByLabel('访问 Token').fill('wrong-token');
-  await page.getByLabel('Tenant').fill('browser-test');
   await page.getByRole('button', { name: '进入管理台' }).click();
   await expect(page.getByText('Token 无效或已失效')).toBeVisible();
   await page.getByLabel('访问 Token').fill('admin-e2e-token');
   await page.getByRole('button', { name: '进入管理台' }).click();
+  await selectTenant(page, request, 'browser-test');
   await page.getByRole('button', { name: '注册服务' }).first().click();
   await page.getByLabel('组织 Org').fill('browser-org');
   await page.getByLabel('应用 App').fill('browser-app');
@@ -120,11 +179,11 @@ test('register, inspect, update, connect, scope and delete a service', async ({ 
   await page.getByRole('button', { name: '确认保存' }).click();
   await expect(page.getByRole('button', { name: 'Browser Test API', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
-  await page.getByLabel('切换 Tenant').fill('another-tenant');
   await page.getByRole('button', { name: '切换租户' }).click();
+  await selectTenant(page, request, 'another-tenant');
   await expect(page.getByText('还没有注册服务')).toBeVisible();
-  await page.getByLabel('切换 Tenant').fill('browser-test');
   await page.getByRole('button', { name: '切换租户' }).click();
+  await selectTenant(page, request, 'browser-test');
   await page.getByRole('button', { name: 'Browser Test API', exact: true }).click();
   await expect(page.getByText('browserStatus', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: '接入配置' }).click();
@@ -144,12 +203,16 @@ test('register, inspect, update, connect, scope and delete a service', async ({ 
   await expect(page.getByLabel('访问 Token')).toHaveValue('');
 });
 
-test('mobile login and service list have no horizontal overflow', async ({ page }) => {
+test('mobile login and service list have no horizontal overflow', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/admin/');
   await page.getByLabel('访问 Token').fill('admin-e2e-token');
-  await page.getByLabel('Tenant').fill('empty-mobile');
   await page.getByRole('button', { name: '进入管理台' }).click();
+  await expect(page.getByRole('heading', { name: '选择租户', exact: true })).toBeVisible();
+  await expect(page.locator('.ant-card-loading')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: 'test-results/tenant-portal-mobile.png', fullPage: true, animations: 'disabled' });
+  await selectTenant(page, request, 'empty-mobile');
   await expect(page.getByText('还没有注册服务')).toBeVisible();
   await expect(page.locator('.ant-spin-spinning')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
@@ -164,13 +227,13 @@ test('mobile login and service list have no horizontal overflow', async ({ page 
   await page.screenshot({ path: 'test-results/credential-editor-mobile.png', fullPage: true, animations: 'disabled' });
 });
 
-test('local Monaco, upload, preview invalidation and conflict rejection', async ({ page }) => {
+test('local Monaco, upload, preview invalidation and conflict rejection', async ({ page, request }) => {
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('/admin/');
   await page.getByLabel('访问 Token').fill('admin-e2e-token');
-  await page.getByLabel('Tenant').fill('upload-test');
   await page.getByRole('button', { name: '进入管理台' }).click();
+  await selectTenant(page, request, 'upload-test');
   await page.getByRole('button', { name: '注册服务' }).first().click();
   await expect(page.getByRole('textbox', { name: 'OpenAPI 代码编辑器' })).toBeVisible();
   await page.getByLabel('组织 Org').fill('upload-org');
@@ -204,11 +267,11 @@ test('local Monaco, upload, preview invalidation and conflict rejection', async 
   expect(errors).toEqual([]);
 });
 
-test('authorization forms validate fields, serialize each type and preserve secrets on edit', async ({ page }) => {
+test('authorization forms validate fields, serialize each type and preserve secrets on edit', async ({ page, request }) => {
   await page.goto('/admin/');
   await page.getByLabel('访问 Token').fill('admin-e2e-token');
-  await page.getByLabel('Tenant', { exact: true }).fill('auth-form-test');
   await page.getByRole('button', { name: '进入管理台' }).click();
+  await selectTenant(page, request, 'auth-form-test');
   await page.getByRole('button', { name: '注册服务' }).first().click();
   await page.getByLabel('组织 Org').fill('auth-org');
   await page.getByLabel('应用 App').fill('auth-app');

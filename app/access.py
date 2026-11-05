@@ -5,10 +5,11 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from app.config import settings
 
 
 def validate_identifier(value, field, limit=64):
-    if (not isinstance(value, str) or not value or len(value) > limit
+    if (not isinstance(value, str) or not value or len(value) > limit or (field == 'tenant' and value in ('.', '..'))
             or any(c.isspace() or ord(c) < 32 or ord(c) == 127 or c in '/\\?#' for c in value)):
         raise ValueError(f'{field} must be a nonblank identifier of at most {limit} characters without whitespace or /\\?#')
     return value
@@ -79,12 +80,15 @@ def rpc_scope(request, params):
 
 async def authorize_request(request: Request):
     path = request.scope['route'].path
+    is_mcp = path in ('/mcp', '/mcp/list', '/mcp/call', '/functions/')
+    if is_mcp and getattr(request.state, 'is_admin', False) and not settings.ADMIN_MCP_ENABLED:
+        raise HTTPException(403, detail='Administrator tokens are restricted to management. Use a database MCP credential or enable ADMIN_MCP_ENABLED.')
     policy = getattr(request.state, 'mcp_policy', None)
     tenant = request.query_params.get('tenant')
     if tenant is not None:
         check_identifier(tenant, 'tenant', 63)
     if policy is not None:
-        if not (path in ('/mcp', '/mcp/list', '/mcp/call', '/functions/')):
+        if not is_mcp:
             raise HTTPException(403, detail='MCP credentials cannot access management APIs')
         if not any(rule.tenant == tenant for rule in policy.rules):
             raise HTTPException(403, detail='Token does not permit this tenant')

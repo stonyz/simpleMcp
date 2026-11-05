@@ -54,7 +54,19 @@ a { color: inherit; }
 .sidebar-bottom p { color: #819f8d; font-size: 11px; line-height: 1.9; margin: 12px 0 30px; }
 .sidebar-protocol { font-size: 8px; letter-spacing: 1.3px; color: #6e907b; }
 .workspace { min-width: 0; flex: 1; margin-left: 226px; }
-.topbar { height: 72px; border-bottom: 1px solid #e5eae5; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 38px; }
+.tenant-portal { min-height: 100vh; background: #f4f6f4; }
+.tenant-portal-header { min-height: 76px; padding: 18px 5vw; background: #fff; border-bottom: 1px solid #e1e8e0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tenant-portal-brand { display: flex; align-items: center; gap: 12px; color: #205a43; }.tenant-portal-brand > .anticon { font-size: 26px; }.tenant-portal-brand > strong { font-size: 23px; letter-spacing: 1px; }.tenant-portal-brand > span:last-child { font-size: 12px; color: #829489; }
+.tenant-portal-main { max-width: 1180px; margin: auto; padding: 52px 30px; }
+.tenant-portal-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }.tenant-portal-tools .ant-input-search { max-width: 440px; }
+.tenant-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.tenant-card { height: 100%; border-color: #dfe8de; }.tenant-card .ant-card-body { display: flex; flex-direction: column; height: 100%; padding: 26px; }.tenant-card-icon { display: grid; place-items: center; width: 46px; height: 46px; color: #3c7a5e; background: #edf4ed; border-radius: 12px; font-size: 24px; margin-bottom: 18px; }
+.tenant-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }.tenant-card-head .tenant-card-icon { margin-bottom: 0; }.tenant-card-head .ant-btn { color: #819487; }
+.tenant-card h2 { margin: 0 0 10px; font-size: 20px; overflow-wrap: anywhere; }.tenant-card .ant-tag { align-self: flex-start; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }.tenant-card p { color: #829389; font-size: 12px; line-height: 1.8; min-height: 42px; overflow-wrap: anywhere; }.tenant-card-counts { display: flex; flex-wrap: wrap; gap: 20px; font-size: 12px; margin-top: auto; margin-bottom: 22px; color: #647d6c; }
+@media (max-width: 960px) { .tenant-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .tenant-portal-main { padding: 30px 18px; }.tenant-grid { grid-template-columns: 1fr; }.tenant-portal-brand > span:last-child { display: none; }.tenant-portal .page-heading { flex-wrap: wrap; }.tenant-portal-tools { gap: 8px; } }
+.workspace-location { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }.workspace-location > .ant-btn { flex-shrink: 0; }.workspace-location .ant-breadcrumb { min-width: 0; }.workspace-location .ant-breadcrumb ol { flex-wrap: nowrap; }.workspace-location .ant-breadcrumb li:first-child { min-width: 0; }.workspace-location .ant-breadcrumb li:last-child { flex-shrink: 0; white-space: nowrap; }.tenant-crumb { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar { gap: 12px; height: 72px; border-bottom: 1px solid #e5eae5; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 38px; }
 .topbar .ant-breadcrumb, .topbar-label { font-size: 12px; }
 .topbar-label { color: #79867c; margin-right: 12px; }
 .main-content { max-width: 1760px; margin: auto; padding: 38px; }

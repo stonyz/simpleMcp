@@ -18,7 +18,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         # Management queries require an explicit scope. Preserve the missing
         # field so FastAPI returns 422 instead of silently selecting default.
-        if request.url.path in ("/services/", "/services/detail", "/services/preview", "/services/save"):
+        if request.url.path.startswith('/credentials') or request.url.path in ("/services/", "/services/detail", "/services/preview", "/services/save"):
             return await call_next(request)
         
         # 检查请求路径是否匹配任何已注册的路由

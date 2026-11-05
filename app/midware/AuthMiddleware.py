@@ -53,6 +53,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
         
         request.state.mcp_policy = policy
+        request.state.is_admin = token in valid_tokens
         
         # Proceed with the request
         response = await call_next(request)

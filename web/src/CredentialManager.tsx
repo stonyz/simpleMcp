@@ -38,10 +38,7 @@ function RuleFields({ index, catalog, remove }: { index: number; catalog: Catalo
   return <Card size="small" className="credential-rule" title={`授权规则 ${index + 1}`}
     extra={<Button type="text" danger icon={<DeleteOutlined />} aria-label={`移除规则 ${index + 1}`} onClick={remove} />}>
     <div className="credential-rule-grid">
-      <Form.Item name={[index, 'tenant']} label="租户" rules={[{ required: true, whitespace: true, max: 63 }]}>
-        <AutoComplete options={unique(catalog.map(item => item.tenant))} onChange={() => clear(['org', 'app', 'services'])}
-          filterOption={(input, option) => !!option?.value.includes(input)} placeholder="选择或输入 Tenant" />
-      </Form.Item>
+      <Form.Item name={[index, 'tenant']} hidden><Input /></Form.Item>
       <Form.Item name={[index, 'level']} label="授权范围"><Select options={levels} onChange={() => clear(['org', 'app', 'services'])} /></Form.Item>
       {level !== 'tenant' && <Form.Item name={[index, 'org']} label="组织" rules={[{ required: true, whitespace: true, max: 64 }]}>
         <AutoComplete options={unique(organizationServices.map(item => item.org))} onChange={() => clear(['app', 'services'])}
@@ -94,7 +91,7 @@ export default function CredentialManager({ api, tenant }: { api: Api; tenant: s
   async function save() {
     try {
       const values = await form.validateFields();
-      const rules = values.rules.map(({ level, ...rule }) => ({ ...rule,
+      const rules = values.rules.map(({ level, ...rule }) => ({ ...rule, tenant,
         org: level === 'tenant' ? null : rule.org,
         app: level === 'tenant' || level === 'org' ? null : rule.app,
         services: level === 'services' ? rule.services || [] : null }));
@@ -126,7 +123,7 @@ export default function CredentialManager({ api, tenant }: { api: Api; tenant: s
   return <>
     <div className="page-heading"><div><div className="eyebrow">MCP ACCESS CONTROL</div><h1>访问凭证 <span>Tokens</span></h1><p>管理 MCP 工具的可见范围和调用权限，多条规则可组合授权。</p></div>
       <Button aria-label="创建凭证" type="primary" size="large" icon={<PlusOutlined aria-hidden />} onClick={() => edit(null)} disabled={loading || !!error}>创建凭证</Button></div>
-    <Alert type="info" showIcon message="这里管理全部租户的 MCP 访问凭证" description="凭证只能访问获授权的工具，不能登录管理台。tools/list 自动过滤；tools/call 根据工具实际归属校验。" style={{ marginBottom: 24 }} />
+    <Alert type="info" showIcon message="仅管理当前租户的 MCP 访问凭证" description="所有授权规则固定在当前租户内。凭证只能访问获授权的工具，不能登录管理台。" style={{ marginBottom: 24 }} />
     <section className="services-panel"><div className="panel-heading"><div><h2><KeyOutlined /> 访问凭证 <Tag>{items.length}</Tag></h2><p>密钥只在创建或轮换后显示一次；停用、改权和轮换在后续请求生效。</p></div><Button icon={<ReloadOutlined />} loading={loading} onClick={reload}>刷新</Button></div>
       <div className="credential-search"><Input.Search allowClear placeholder="搜索名称、说明或 Token 前缀" aria-label="搜索凭证" value={query} onChange={e => setQuery(e.target.value)} /></div>
       {error && <Alert type="error" showIcon message="访问凭证加载失败" description={error} />}
@@ -155,7 +152,7 @@ export default function CredentialManager({ api, tenant }: { api: Api; tenant: s
     <Modal open={!!issued} title="保存访问 Token" onCancel={() => setIssued(null)} footer={<Button type="primary" onClick={() => setIssued(null)}>我已保存</Button>} width={760} maskClosable={false} destroyOnClose>
       {issued && <><Alert type="warning" showIcon message="此 Token 仅显示一次" description="请复制并安全保存。关闭后无法再次查看，遗失时可以轮换生成新 Token。" />
         <Typography.Paragraph copyable={{ text: issued.secret }} className="code-block credential-secret">{issued.secret}</Typography.Paragraph>
-        <Typography.Text type="secondary">客户端接入示例（可修改 tenant 为规则中其他租户）：</Typography.Text>
+        <Typography.Text type="secondary">当前租户的客户端接入示例：</Typography.Text>
         <Typography.Paragraph copyable={{ text: config }}><pre className="code-block">{config}</pre></Typography.Paragraph></>}
     </Modal>
   </>;

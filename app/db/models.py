@@ -2,6 +2,15 @@ from sqlalchemy import Column, Integer, String, Text, DATETIME, TIMESTAMP, Uniqu
 from sqlalchemy.orm import relationship
 from app.db import Base
 
+
+class Tenant(Base):
+    __tablename__ = 'tenants'
+    id = Column(String(63), primary_key=True)
+    name = Column(String(128), nullable=False)
+    description = Column(Text, nullable=False, default='')
+    created_at = Column(DATETIME, nullable=False)
+    updated_at = Column(DATETIME, nullable=False)
+
 class OpenAPIFile(Base):
     __tablename__ = "openapi_files"
 

@@ -72,6 +72,8 @@ async def on_startup():
     
     # 使用现有的数据库操作方式加载数据
     with get_db_context() as db:
+        from app.tenants import sync_tenants
+        sync_tenants(db)
         files = crud.get_openapi_files(db)
         total_funcs = 0
         for f in files:

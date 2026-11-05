@@ -17,7 +17,7 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 ## Web 服务管理台
 
 浏览器访问 `http://localhost:8000/admin/`，输入 `.env` 中 `AUTH_TOKENS`
-配置的管理员 Token 和目标 Tenant。管理台使用 React、TypeScript、Vite、Ant Design
+配置的管理员 Token 登录，在入口选择租户后进入工作空间。管理台使用 React、TypeScript、Vite、Ant Design
 和本地加载的 Monaco 编辑器，不依赖外部 CDN。
 
 支持服务分页查询、按组织/应用筛选、搜索、YAML/JSON 上传或粘贴、工具变更预览、
@@ -26,9 +26,13 @@ MCP Server is a backend service designed to manage and serve OpenAPI specificati
 现有 `/services/register` 的兼容行为保持不变。详情区分文档声明工具和当前注册表生效工具，
 不检测上游健康状态。文档导出为数据库保存的 YAML，不保留原始文件的排版和注释。
 
-管理台使用 `AUTH_TOKENS` 中的管理员凭证。组织和应用支持联动候选，也允许注册新的标识。
+管理台使用 `AUTH_TOKENS` 中的管理员凭证；默认仅允许管理，`ADMIN_MCP_ENABLED=true` 可显式开启管理员 MCP 访问。
+组织和应用支持联动候选，也允许注册新的标识。
 候选来自持久化文档汇总，删除最后一份文档后对应分组消失。
-“访问凭证”页面管理全部租户的 MCP 客户端 Token：支持多个授权规则、租户/组织/应用/指定服务范围、
+工作空间内的服务、候选列表和访问凭证均固定在当前租户；顶部栏显示租户名称，点击切换图标可重新选择。
+租户选择页直接支持新增，卡片提供编辑图标和更多操作菜单，可修改名称和说明、删除空租户；租户标识创建后不可修改。
+含服务或凭证规则的租户不能删除。首次升级会自动登记历史服务及凭证规则中的租户，不改变其归属。
+“访问凭证”页面只管理当前租户的 MCP 客户端 Token：支持多个授权规则、租户/组织/应用/指定服务范围、
 分别控制工具列表和调用权限，以及停用、过期时间、密钥轮换和删除。
 数据库 Token 只用于 MCP，不能登录管理台或修改服务。
 新密钥仅在创建或轮换时展示一次，数据库只保存摘要和展示前缀。
@@ -361,8 +365,9 @@ A token may contain multiple allow rules; their permissions are combined:
 Each rule has `operations: ["list", "call"]` by default. Either operation can
 be removed independently. `services: null` permits the full scope; an empty
 service array is rejected. App rules require org; service rules require both.
-Rules may span multiple tenants, and selected services are validated against the
-database. Service identity is the full `tenant + org + app + fileId` tuple;
+All rules created or edited in a workspace must belong to its selected tenant.
+Multiple rules can combine organizations, applications and service selections within
+that tenant. Selected services are validated against the database. Service identity is the full `tenant + org + app + fileId` tuple;
 updating a document in place preserves its grant. Broad scopes include future
 services, while deleting a selected service does not grant access to any other
 service. Re-registering the same full identity is treated as the same service.
@@ -377,9 +382,36 @@ with the same name remain ambiguous and require org/app filters.
 Call-only permissions continue to validate output schemas.
 
 Database tokens cannot access service administration or credential management.
-`AUTH_TOKENS` retains administrator access to management and all MCP tools.
+`AUTH_TOKENS` grants administrator access to management. By default these tokens
+cannot access MCP or its `/functions/` compatibility route (HTTP 403). Set
+`ADMIN_MCP_ENABLED=true` and restart to explicitly permit administrator MCP access;
+its default is `false`. Database credential permissions are unaffected.
 Use Bearer headers for client credentials. The console can copy an MCP connection
 example when issuing a token. JSON-RPC params take precedence over org/app headers.
+
+Administrator tenant APIs (managed directly on the tenant selection page):
+
+- `GET /tenants/`: tenant metadata and service/credential counts.
+- `POST /tenants/`: create `{id, name, description}`.
+- `GET /tenants/{id}`: inspect a tenant before entering its workspace.
+- `PUT /tenants/{id}`: edit `{name, description}`; the ID is immutable.
+- `DELETE /tenants/{id}`: delete an empty tenant; nonempty tenants return 409.
+
+The `tenants` table is created on startup and populated from existing services and
+credential rules. A fresh empty installation starts with a `default` tenant.
+Legacy registration APIs continue to register their tenant automatically.
+Returning to the tenant portal unmounts the workspace, clears editors and one-time
+secrets, and aborts its list/catalog requests. A failed entry never opens a workspace.
+The administrator token remains in page memory until logout or refresh.
+
+All credential administration APIs below **require `?tenant=<selected-id>`**.
+Missing tenant returns 422, including with the full middleware stack; it does not
+silently select `default`. Lists/catalog only return that tenant's resources.
+Create/update rules targeting another tenant return 403. Editing, disabling,
+rotating or deleting another tenant's credential ID returns 404 and leaves it unchanged.
+Historical credentials with rules spanning multiple tenants retain their MCP runtime
+permissions but are excluded from tenant workspaces and cannot be modified there.
+No existing secrets or grants are automatically changed.
 
 Administrator credential APIs:
 
@@ -717,7 +749,7 @@ When parameters are passed via multiple methods simultaneously, the priority is 
 #### tools/list (list_tools)
 - ✅ Supports filtering via `orgid`/`appid`
 - ✅ Supports HTTP Headers
-- ✅ Global administrators can list all tenant tools; database tokens only see authorized tools
+- ✅ Database tokens only see authorized tools; administrators require `ADMIN_MCP_ENABLED=true` for MCP access
 
 #### tools/call (call_tool)
 - ✅ Supports permission checking via `orgid`/`appid`
@@ -744,7 +776,7 @@ Scope and operation authorization failures return HTTP 403:
 
 ### Backward Compatibility
 
-- Existing global administrator tokens remain valid across all tenants.
+- Existing administrator tokens remain valid for management; MCP access requires `ADMIN_MCP_ENABLED=true`.
 - Calls without org/app still work when exactly one tool matches the name.
 - Database credentials automatically filter authorized resources; client filters only narrow access.
 

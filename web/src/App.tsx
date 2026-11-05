@@ -1,28 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, App as AntApp, AutoComplete, Avatar, Badge, Breadcrumb, Button, Card, Empty, Form, Input, Space, Table, Tag, Typography } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, App as AntApp, AutoComplete, Badge, Breadcrumb, Button, Card, Empty, Form, Input, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ApiOutlined, AppstoreOutlined, ArrowRightOutlined, BookOutlined, CloudServerOutlined, CodeOutlined,
-  FileTextOutlined, KeyOutlined, LockOutlined, LogoutOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import { createApi, serviceKey, time, type AccessScope, type Api, type Listing, type ScopeDirectory, type Service } from './api';
+  FileTextOutlined, KeyOutlined, LockOutlined, LogoutOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SafetyCertificateOutlined, SwapOutlined } from '@ant-design/icons';
+import { createApi, serviceKey, time, type AccessScope, type Api, type Listing, type ScopeDirectory, type Service, type Tenant } from './api';
 import ServiceEditor from './ServiceEditor';
 import ServiceDetail from './ServiceDetail';
 import CredentialManager from './CredentialManager';
+import TenantPortal from './TenantPortal';
 
-interface Session { token: string; tenant: string; access: AccessScope }
-type LoginValues = Pick<Session, 'token' | 'tenant'>;
+interface Session { token: string; tenant: string; access: AccessScope; workspace: Tenant }
+type LoginValues = Pick<Session, 'token'>;
 
 function Brand() { return <div className="brand"><span className="brand-icon"><ApiOutlined /></span><span>MCP<span className="brand-sub">SERVICE CONSOLE</span></span></div>; }
 
-function Login({ onLogin, expired }: { onLogin: (session: Session) => void; expired: boolean }) {
+function Login({ onLogin, expired }: { onLogin: (token: string) => void; expired: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(expired ? 'Token 无效或已失效，请重新登录' : '');
   async function enter(values: LoginValues) {
     setBusy(true); setError('');
     try {
-      const session = { token: values.token.trim(), tenant: values.tenant.trim() };
-      const api = createApi(session.token, session.tenant);
-      const access = await api.access();
-      await api.list({ org: access.org || '', app: access.app || '', page_size: 1 });
-      onLogin({ ...session, access });
+      const token = values.token.trim();
+      await createApi(token).tenants();
+      onLogin(token);
     } catch (e) { setError(e instanceof TypeError ? '连接失败，请检查服务是否可用' : (e as Error).message); }
     finally { setBusy(false); }
   }
@@ -30,14 +29,11 @@ function Login({ onLogin, expired }: { onLogin: (session: Session) => void; expi
     <div className="login-story-main"><div className="eyebrow">OPENAPI → MCP</div><h1>让服务接入，<br />清晰可控。</h1><p>集中管理 OpenAPI 文档和工具，<br />从注册到更新，在一个工作台完成。</p>
       <div className="login-flow"><FileTextOutlined /><span className="flow-line" /><ApiOutlined /><span className="flow-line" /><AppstoreOutlined /></div>
     </div><div className="login-foot">MCP SERVER <span>服务管理工作台</span></div>
-  </div><div className="login-panel"><div className="login-card"><Tag color="green" bordered={false}>SERVICE ADMINISTRATION</Tag><h2>进入管理台</h2><p className="muted">使用服务端配置的访问 Token 连接。</p>
+  </div><div className="login-panel"><div className="login-card"><Tag color="green" bordered={false}>SERVICE ADMINISTRATION</Tag><h2>进入管理台</h2><p className="muted">使用管理员 Token 登录，再选择租户工作空间。</p>
     {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 24 }} />}
-    <Form name="login" layout="vertical" onFinish={enter} initialValues={{ tenant: 'default' }} requiredMark={false}>
+    <Form name="login" layout="vertical" onFinish={enter} requiredMark={false}>
       <Form.Item name="token" label="访问 Token" rules={[{ required: true, whitespace: true, message: '请输入访问 Token' }]}>
         <Input.Password size="large" prefix={<LockOutlined />} placeholder="AUTH_TOKENS 中的管理员 Token" autoComplete="off" />
-      </Form.Item>
-      <Form.Item name="tenant" label="Tenant" rules={[{ required: true, whitespace: true, message: '请输入租户标识' }, { max: 63 }]}>
-        <Input size="large" prefix={<CloudServerOutlined />} placeholder="租户标识" />
       </Form.Item>
       <Button type="primary" size="large" block htmlType="submit" loading={busy}>进入管理台 <ArrowRightOutlined /></Button>
     </Form>
@@ -45,14 +41,13 @@ function Login({ onLogin, expired }: { onLogin: (session: Session) => void; expi
   </div></div></div>;
 }
 
-function Workspace({ session, api, onLogout, onTenant }: { session: Session; api: Api; onLogout: () => void; onTenant: (access: AccessScope) => void }) {
+function Workspace({ session, api, onLogout, onLeave }: { session: Session; api: Api; onLogout: () => void; onLeave: () => void }) {
   const { message, modal } = AntApp.useApp();
   const [page, setPage] = useState<'services' | 'credentials'>('services');
   const [result, setResult] = useState<Listing>({ items: [], total: 0, page: 1, page_size: 20 });
   const defaultFilters = { org: session.access.org || '', app: session.access.app || '', q: '', page: 1, page_size: 20 };
   const [query, setQuery] = useState(defaultFilters);
   const canManage = session.access.role === 'manager';
-  const [switching, setSwitching] = useState(false);
   const [directory, setDirectory] = useState<ScopeDirectory>({ tenant: session.tenant, service_count: 0, organizations: [] });
   const [directoryError, setDirectoryError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -70,18 +65,6 @@ function Workspace({ session, api, onLogout, onTenant }: { session: Session; api
     });
     return () => controller.abort();
   }, [api, revision]);
-  async function changeTenant(values: { tenant: string }) {
-    const tenant = values.tenant.trim();
-    if (tenant === session.tenant) return;
-    setSwitching(true);
-    try {
-      const nextApi = createApi(session.token, tenant);
-      const access = await nextApi.access();
-      await nextApi.list({ org: access.org || '', app: access.app || '', page_size: 1 });
-      onTenant(access);
-    } catch (e) { message.error((e as Error).message); }
-    finally { setSwitching(false); }
-  }
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError('');
@@ -108,16 +91,10 @@ function Workspace({ session, api, onLogout, onTenant }: { session: Session; api
     <button aria-label="访问凭证" className={`nav-button ${page === 'credentials' ? 'nav-active' : 'nav-link'}`} onClick={() => setPage('credentials')}><KeyOutlined aria-hidden /> 访问凭证</button>
     <a className="nav-link" href="/docs" target="_blank" rel="noreferrer"><BookOutlined /> API 文档 <ArrowRightOutlined /></a>
     <div className="sidebar-bottom"><div className="sidebar-orbit"><ApiOutlined /></div><strong>一个入口，连接服务</strong><p>OpenAPI 文档注册后，<br />即可通过 MCP 访问工具。</p><span className="sidebar-protocol">MODEL CONTEXT PROTOCOL</span></div>
-  </aside><div className="workspace"><header className="topbar"><Breadcrumb items={[{ title: '工作空间' }, { title: page === 'services' ? '服务管理' : '访问凭证' }]} />
-    <Space><Button className="mobile-nav" size="small" onClick={() => setPage(page === 'services' ? 'credentials' : 'services')}>{page === 'services' ? '访问凭证' : '服务管理'}</Button><Badge color="#18765c" /><span className="topbar-label">管理控制台</span><Avatar size="small" style={{ background: '#e4eee8', color: '#18765c' }}>A</Avatar><Button type="text" icon={<LogoutOutlined />} onClick={onLogout}>退出</Button></Space>
+  </aside><div className="workspace"><header className="topbar"><div className="workspace-location"><Tooltip title="切换租户"><Button type="text" aria-label="切换租户" icon={<SwapOutlined aria-hidden />} onClick={onLeave} /></Tooltip><Breadcrumb items={[{ title: <Tooltip title={`${session.workspace.name} · ${session.tenant}`}><span className="tenant-crumb">{session.workspace.name}</span></Tooltip> }, { title: page === 'services' ? '服务管理' : '访问凭证' }]} /></div>
+    <Space><Button className="mobile-nav" size="small" onClick={() => setPage(page === 'services' ? 'credentials' : 'services')}>{page === 'services' ? '访问凭证' : '服务管理'}</Button><Button type="text" icon={<LogoutOutlined />} onClick={onLogout}>退出</Button></Space>
   </header><main className="main-content">{page === 'credentials' ? <CredentialManager api={api} tenant={session.tenant} /> : <><div className="page-heading"><div><div className="eyebrow">SERVICE REGISTRY</div><h1>服务管理 <span>Services</span></h1><p>管理 OpenAPI 服务文档，查看工具并配置 MCP 接入。</p></div>
     {canManage && <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => setEditor({ row: null })}>注册服务</Button>}</div>
-    <div className="scope-bar"><Space wrap><span className="scope-dot" /><strong>当前租户</strong><Tag color="green" bordered={false}>{session.tenant}</Tag><Tag>{({ reader: '只读', caller: '查询与调用', manager: '管理' })[session.access.role]}</Tag></Space>
-      <Form name="tenant-scope" layout="inline" onFinish={changeTenant} initialValues={{ tenant: session.tenant }} requiredMark={false}>
-        <Form.Item name="tenant" rules={[{ required: true, whitespace: true, message: '请输入租户标识' }, { max: 63 }]}><Input aria-label="切换 Tenant" placeholder="租户标识" /></Form.Item>
-        <Button htmlType="submit" loading={switching}>切换租户</Button>
-      </Form>
-    </div>
     <div className="stats-grid">{[
       { label: '服务文档', value: result.total, icon: <CloudServerOutlined />, note: '当前筛选范围', color: 'green' },
       { label: '声明工具', value: currentTools, icon: <CodeOutlined />, note: '当前页服务中的工具', color: 'blue' },
@@ -159,11 +136,20 @@ function Workspace({ session, api, onLogout, onTenant }: { session: Session; api
 }
 
 export default function App() {
+  const activeToken = useRef<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [expired, setExpired] = useState(false);
-  const unauthorized = useCallback(() => { setSession(null); setExpired(true); }, []);
+  const unauthorized = useCallback(() => { activeToken.current = null; setToken(null); setSession(null); setExpired(true); }, []);
+  const platformApi = useMemo(() => token ? createApi(token, undefined, unauthorized) : null, [token, unauthorized]);
   const api = useMemo(() => session ? createApi(session.token, session.tenant, unauthorized) : null, [session, unauthorized]);
-  return session && api ? <Workspace key={session.tenant} api={api} session={session}
-    onLogout={() => { setSession(null); setExpired(false); }} onTenant={access => setSession({ ...session, tenant: access.tenant, access })} />
-    : <Login expired={expired} onLogin={value => { setExpired(false); setSession(value); }} />;
+  const logout = () => { activeToken.current = null; setToken(null); setSession(null); setExpired(false); };
+  if (!token || !platformApi) return <Login expired={expired} onLogin={value => { activeToken.current = value; setSession(null); setExpired(false); setToken(value); }} />;
+  if (!session || !api) return <TenantPortal api={platformApi} onLogout={logout} onEnter={async row => {
+    const scoped = createApi(token, row.id, unauthorized);
+    const [workspace, access] = await Promise.all([scoped.tenant(row.id), scoped.access()]);
+    if (activeToken.current !== token) return;
+    setSession({ token, tenant: row.id, access, workspace });
+  }} />;
+  return <Workspace key={session.tenant} api={api} session={session} onLogout={logout} onLeave={() => setSession(null)} />;
 }
